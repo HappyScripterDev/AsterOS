@@ -21,7 +21,7 @@ disk image). The current milestone is a **single-CPU developer preview**:
 | Kernel | GDT/TSS, IDT, 256 vectors, exceptions, PIC/PIT at 1 kHz, 4-level paging, bitmap frame allocator, kernel heap (`alloc`), preemptive scheduler, ring-3 processes, syscalls via `int 0x80` |
 | Memory | 4 KiB frames, 32 GiB addressable bitmap, per-process PML4, NX/W^X user mappings, heap self-tests, user copy validation |
 | Drivers | COM1 serial, UEFI GOP framebuffer, PS/2 keyboard + mouse (IRQ driven), PIT, PCI config, AHCI (q35) |
-| Filesystem | In-memory ramfs with paths, directories, files, file descriptors, `readdir`, `stat`, `unlink`, `mkdir` |
+| Filesystem | VFS + mount table; ramfs root for system files, FAT32 at `/home/user` with create/read/write/mkdir/rename/unlink |
 | Desktop | Aster Desktop in ring 3: light menu bar, Spotlight launcher, dock with generated app icons and magnification, macOS-style window manager (traffic lights, drag, resize, maximize, snap, animations), Control Centre, notifications, virtual desktops |
 | Storage | Block registry with capacity/bounds/flush/counters, mount table, GPT + FAT32 at `/home/user`; v1 settings with backup; Settings reports device, filesystem, capacity, used/free and I/O |
 | Processes | Private PML4 per process; `SPAWN`/`WAIT`; zombie reaping; every ring-3 exception contained; isolation probe with exit status 42 and a deliberate fault returning -11 |
@@ -30,14 +30,14 @@ disk image). The current milestone is a **single-CPU developer preview**:
 | Monitor | CPU/memory/process cards, storage usage, real I/O counters and a kernel-log view |
 | IPC | Kernel channels with per-process handles, 256-byte messages, blocking send/receive, close/hangup; ping-pong verified between isolated processes |
 | Apps | Terminal (real shell + ramfs), Files, Settings, Calculator, Monitor, Text, Notes, Calendar, Wallpapers |
-| Tests | Image verifier, kernel self-tests, ramfs self-test, QEMU boot smoke test, scripted UI/pointer tests |
+| Tests | Image verifier, block/mount/FAT self-tests, boot smoke, UI/pointer/files probes, persistence, isolation, settings and service tests |
 
 Everything in the table is exercised by booting the system and driving it, not
 by static screenshots. Known gaps are listed in
 [docs/FEATURES.md](docs/FEATURES.md) and [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
-There is no networking, audio, USB, storage driver, AFS persistence, SMP/APIC,
-GPU acceleration, application sandboxing, package manager, installer, updater,
-or browser yet. Store/Installer/Update/Browser are deliberately **not** present
+There is no networking, audio, USB, AFS/journaling, SMP/APIC, GPU acceleration,
+full application sandboxing, package manager, installer, updater, or browser
+yet. The FAT32 home uses 8.3 names and has no journal. Store/Installer/Update/Browser are deliberately **not** present
 in the UI.
 
 ## Quick start
