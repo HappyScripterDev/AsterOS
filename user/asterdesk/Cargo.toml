@@ -1,0 +1,13 @@
+[package]
+name = "asterdesk"
+version = "0.1.0"
+edition = "2021"
+description = "Aster Desktop - ring-3 desktop environment"
+
+[dependencies]
+aster-abi = { path = "../../shared/aster-abi" }
+libm = "0.2"
+
+[[bin]]
+name = "asterdesk"
+path = "src/main.rs"

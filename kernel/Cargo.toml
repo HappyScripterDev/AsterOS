@@ -1,0 +1,14 @@
+[package]
+name = "asterkernel"
+version = "0.1.0"
+edition = "2021"
+description = "Aster OS kernel"
+
+[dependencies]
+aster-abi = { path = "../shared/aster-abi" }
+
+[[bin]]
+name = "asterkernel"
+path = "src/main.rs"
+
+[build-dependencies]

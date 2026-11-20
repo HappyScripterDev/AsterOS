@@ -1,0 +1,12 @@
+[package]
+name = "asterboot"
+version = "0.1.0"
+edition = "2021"
+description = "Aster Boot - UEFI bootloader for Aster OS"
+
+[dependencies]
+aster-abi = { path = "../shared/aster-abi" }
+
+[[bin]]
+name = "asterboot"
+path = "src/main.rs"

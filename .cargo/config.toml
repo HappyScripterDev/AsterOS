@@ -1,0 +1,8 @@
+[target.x86_64-unknown-none]
+# Freestanding x86_64 code: no red zone (interrupts use the kernel stack),
+# static relocation, kernel code model for the higher-half image.
+rustflags = [
+    "-C", "no-redzone=yes",
+    "-C", "relocation-model=static",
+    "-C", "code-model=kernel",
+]

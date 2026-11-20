@@ -1,0 +1,72 @@
+# Aster OS Feature Matrix
+
+Status values: **Implemented**, **Partial**, **Not implemented**. "Tested"
+means the feature is exercised by an automated test in this repository or was
+verified during the recorded milestone session. Limitations are explicit.
+
+| Feature | Status | Tested | Limitations / Evidence |
+|---|---|---|---|
+| UEFI boot (custom loader) | Implemented | Yes | `tools/test.py` sees `BOOT-HANDOFF-OK`; OVMF only, no Secure Boot policy |
+| GPT + FAT32 ESP | Implemented | Yes | Host tests verify CRC, cluster chains, contents; 8.3 names only |
+| Kernel ELF loading | Implemented | Yes | PT_LOAD validation, page-aligned segments, BSS zeroing |
+| Higher-half kernel | Implemented | Yes | Image at `0xFFFFFFFF80000000`, direct map at `0xFFFF800000000000` |
+| GDT/TSS/IDT | Implemented | Yes | Ring 3 transitions, TSS RSP0, IST double fault |
+| Exceptions | Implemented | Yes | Registers + CR2, user faults kill the process, fatal kernel faults halt |
+| PIC + PIT | Implemented | Yes | 1 kHz; no APIC/HPET |
+| PMM | Implemented | Yes | Bitmap, 32 GiB max, reservations, zeroing |
+| VMM / paging | Implemented | Yes | Per-process PML4, NX, W^X, U/S at every level |
+| Kernel heap | Implemented | Yes | First-fit, 48-256 MiB virtual limit, self-test |
+| Scheduler | Partial | Yes | Preemptive user threads; kernel threads cooperative; single CPU |
+| Context switching | Implemented | Yes | Callee-saved + FXSAVE, CR3 switch |
+| System calls | Partial | Yes | 24 calls; SPAWN/WAIT/IPC/SET_THEME return ENOSYS |
+| Ring-3 processes | Implemented | Yes | Desktop PID 1; static ELF, fixed base, 64 KiB stack |
+| IPC | Not implemented | No | ABI reserved; design in docs/architecture/IPC.md |
+| Process creation API | Not implemented | No | `SPAWN` reserved |
+| Serial console | Implemented | Yes | COM1, 115200 8N1, ring buffer |
+| Framebuffer | Implemented | Yes | GOP 1280x800, user mapping |
+| PS/2 keyboard | Implemented | Yes | ASCII + special keys, modifiers; no typematic repeat in guest |
+| PS/2 mouse | Implemented | Yes | Absolute pointer, buttons; no wheel |
+| PCI enumeration | Not implemented | - | Planned |
+| ACPI | Not implemented | - | RSDP captured only |
+| APIC / SMP | Not implemented | - | Single CPU, 8259 |
+| VirtIO block/network | Not implemented | - | No block driver |
+| AHCI/NVMe/USB/audio/GPU | Not implemented | - | No drivers |
+| VFS | Implemented | Yes | ramfs only |
+| Native AFS | Not implemented | - | Design not started |
+| Persistence | Not implemented | - | Ramfs is volatile; UI states this |
+| File permissions | Not implemented | - | 0644/0755 are informational; single user |
+| Terminal | Implemented | Yes | Real shell over ramfs; help/ls/cat/write/mkdir/rm/ps/free/date/theme/accent/open |
+| Files | Implemented | Yes | Browse, open text files in Text; no copy/move/rename |
+| Settings | Implemented | Yes | Appearance/Display/Sound/Network/Bluetooth/Users/Security/Storage/Accessibility/About; real theme/accent/wallpaper/motion/brightness |
+| Calculator | Implemented | Yes | Arithmetic parser, keyboard + mouse |
+| Monitor | Implemented | Yes | Real SystemInfo, memory/activity graphs, process list |
+| Text editor | Implemented | Yes | Create/open/save, keyboard editing, no selection/undo |
+| Notes | Implemented | Yes | Notes directory, create/delete/save |
+| Calendar | Implemented | Yes | CMOS RTC, month navigation |
+| Wallpapers | Implemented | Yes | Procedural previews, apply; no image file decoding |
+| Store / Installer / Update | Not implemented | - | Deliberately absent from UI |
+| Browser | Not implemented | - | No network or engine integration |
+| Networking | Not implemented | - | No Ethernet/IP/DHCP/DNS/TCP/UDP |
+| Users/login | Not implemented | - | Single implicit `user`, no password |
+| Sandboxing | Not implemented | - | Apps share the desktop address space |
+| ASLR/KASLR | Not implemented | - | Fixed addresses |
+| SMEP/SMAP/UMIP | Not implemented | - | CPU features not enabled |
+| Signed boot/packages/updates | Not implemented | - | No crypto stack |
+| Audit logging | Partial | - | Kernel ring log; not exposed as a service |
+| Package manager | Not implemented | - | - |
+| SDK / app template | Not implemented | - | ABI documented; no SDK |
+| Installer media | Not implemented | - | Disk image is hand-built |
+| Automated tests | Partial | Yes | Host, boot, UI probes; gaps listed in TESTING.md |
+| CI | Partial | No | Workflow exists, not yet run on GitHub |
+| Documentation | Implemented | - | Architecture, ADRs, research, design, security, benchmarks |
+
+## Honest notes
+
+- "Implemented" means the feature performs its advertised function; it does not
+  mean it is complete relative to a production OS.
+- No feature in this matrix is represented by a decorative control. The
+  Settings app explicitly reports missing audio, network, and Bluetooth
+  hardware/drivers; Store/Installer/Update have no buttons anywhere.
+- The Wallpapers app is named as such rather than "Photos" because image file
+  decoding is not implemented. It previews generated wallpapers that it can
+  actually apply.

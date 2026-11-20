@@ -1,0 +1,23 @@
+# Build outputs
+/build/
+/target/
+
+# Host-provided firmware and fonts (fetch with tools/fetch_firmware.py and
+# tools/fontgen.py). The generated atlas is committed.
+/tools/firmware/
+/assets/fonts/*.ttf
+/assets/fonts/*.otf
+
+# Python
+__pycache__/
+*.pyc
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Serial logs and screenshots produced by tests
+*.log
+*.ppm

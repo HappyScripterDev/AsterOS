@@ -1,0 +1,7 @@
+[package]
+name = "aster-abi"
+version = "0.1.0"
+edition = "2021"
+description = "Shared boot and system-call ABI for Aster OS"
+
+[dependencies]
