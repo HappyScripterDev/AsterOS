@@ -21,7 +21,6 @@ use core::arch::global_asm;
 use core::fmt::Write;
 use core::panic::PanicInfo;
 
-
 mod arch;
 mod boot;
 mod drivers;
@@ -32,8 +31,8 @@ mod mm;
 mod sched;
 mod sync;
 mod syscall;
-mod user;
 mod time;
+mod user;
 
 pub const VERSION: &str = "0.1.0 (developer preview)";
 
@@ -136,7 +135,11 @@ pub extern "C" fn kernel_main(boot_info_address: u64) -> ! {
         heap_mapped,
         heap_used
     );
-    crate::info!("kernel address space: image {:#x}, direct map {:#x}", mm::vmm::KERNEL_BASE, mm::vmm::HHDM_OFFSET);
+    crate::info!(
+        "kernel address space: image {:#x}, direct map {:#x}",
+        mm::vmm::KERNEL_BASE,
+        mm::vmm::HHDM_OFFSET
+    );
     crate::info!("KERNEL-READY");
 
     // The idle thread owns this CPU from here on; this call never returns.

@@ -145,7 +145,11 @@ fn halt() -> ! {
 }
 
 fn fail(message: &str, status: Status) -> ! {
-    log!("\n[fatal] {}\n[fatal] UEFI status = {:#x}\n", message, status);
+    log!(
+        "\n[fatal] {}\n[fatal] UEFI status = {:#x}\n",
+        message,
+        status
+    );
     halt()
 }
 
@@ -167,12 +171,7 @@ unsafe fn u16_name(path: &str) -> [u16; 64] {
 unsafe fn file_size(file: *mut FileProtocol) -> Result<u64, Status> {
     let mut info = [0u8; 1024];
     let mut size = info.len();
-    let status = ((*file).get_info)(
-        file,
-        &FILE_INFO_GUID,
-        &mut size,
-        info.as_mut_ptr(),
-    );
+    let status = ((*file).get_info)(file, &FILE_INFO_GUID, &mut size, info.as_mut_ptr());
     if status != EFI_SUCCESS {
         return Err(status);
     }
@@ -186,10 +185,7 @@ unsafe fn file_size(file: *mut FileProtocol) -> Result<u64, Status> {
 /// whether it accepts a leading separator, so try the documented path first
 /// and then fall back to equivalent forms.
 #[inline(never)]
-unsafe fn file_open(
-    root: *mut FileProtocol,
-    path: &str,
-) -> Result<*mut FileProtocol, Status> {
+unsafe fn file_open(root: *mut FileProtocol, path: &str) -> Result<*mut FileProtocol, Status> {
     let stripped = path.strip_prefix('\\').unwrap_or(path);
     let variants = [path, stripped];
     let mut last = EFI_SUCCESS;
@@ -206,7 +202,11 @@ unsafe fn file_open(
     Err(last)
 }
 
-unsafe fn read_file(bs: *mut BootServices, root: *mut FileProtocol, path: &str) -> Result<(&'static [u8], u64), &'static str> {
+unsafe fn read_file(
+    bs: *mut BootServices,
+    root: *mut FileProtocol,
+    path: &str,
+) -> Result<(&'static [u8], u64), &'static str> {
     let file = match file_open(root, path) {
         Ok(file) => file,
         Err(status) => {
@@ -227,7 +227,9 @@ unsafe fn read_file(bs: *mut BootServices, root: *mut FileProtocol, path: &str) 
     }
     let buffer = allocate_pool(bs, size as usize).map_err(|_| "out of memory for kernel file")?;
     let slice = core::slice::from_raw_parts_mut(buffer, size as usize);
-    (*file).read_exact(slice).map_err(|_| "cannot read kernel file")?;
+    (*file)
+        .read_exact(slice)
+        .map_err(|_| "cannot read kernel file")?;
     let _ = ((*file).close)(file);
     Ok((core::slice::from_raw_parts(buffer, size as usize), size))
 }
@@ -288,7 +290,9 @@ unsafe fn load_module(
     Ok(module)
 }
 
-unsafe fn get_memory_map(bs: *mut BootServices) -> Result<(&'static mut [u8], usize, usize, u32), &'static str> {
+unsafe fn get_memory_map(
+    bs: *mut BootServices,
+) -> Result<(&'static mut [u8], usize, usize, u32), &'static str> {
     let mut size = 0usize;
     let mut key = 0usize;
     let mut descriptor_size = 0usize;
@@ -422,8 +426,7 @@ pub extern "efiapi" fn efi_main(image: Handle, system_table: *mut SystemTable) -
         }
     }
     log!("[ok] EFI System Partition opened\n");
-    unsafe {
-    }
+    unsafe {}
 
     // --- graphics ----------------------------------------------------------
     let mut framebuffer = FramebufferInfo {
@@ -469,20 +472,20 @@ pub extern "efiapi" fn efi_main(image: Handle, system_table: *mut SystemTable) -
     }
 
     // --- kernel and modules -------------------------------------------------
-    let (kernel_bytes, _kernel_size) = unsafe {
-        read_file(bs, root, KERNEL_PATH)
-            .unwrap_or_else(|e| fail_str(e))
-    };
-    let kernel = unsafe {
-        elf::load_kernel(bs, kernel_bytes).unwrap_or_else(|e| fail_str(e))
-    };
+    let (kernel_bytes, _kernel_size) =
+        unsafe { read_file(bs, root, KERNEL_PATH).unwrap_or_else(|e| fail_str(e)) };
+    let kernel = unsafe { elf::load_kernel(bs, kernel_bytes).unwrap_or_else(|e| fail_str(e)) };
     log!(
         "[ok] kernel ELF loaded: {} segments, entry {:#x}\n",
         kernel.segment_count,
         kernel.entry
     );
 
-    let mut modules = [ModuleInfo { address: 0, size: 0, name: [0; 24] }; MAX_MODULES];
+    let mut modules = [ModuleInfo {
+        address: 0,
+        size: 0,
+        name: [0; 24],
+    }; MAX_MODULES];
     let mut module_count = 0usize;
     match unsafe { load_module(bs, root, DESK_PATH, "desk") } {
         Ok(module) => {
@@ -493,14 +496,11 @@ pub extern "efiapi" fn efi_main(image: Handle, system_table: *mut SystemTable) -
     }
 
     // --- page tables --------------------------------------------------------
-    let mut tables = unsafe {
-        PageTables::new(bs).unwrap_or_else(|e| fail_str(e))
-    };
+    let mut tables = unsafe { PageTables::new(bs).unwrap_or_else(|e| fail_str(e)) };
 
     // Determine the physical address that must be mapped.
-    let (map_slice, map_key, map_desc_size, map_version) = unsafe {
-        get_memory_map(bs).unwrap_or_else(|e| fail_str(e))
-    };
+    let (map_slice, map_key, map_desc_size, map_version) =
+        unsafe { get_memory_map(bs).unwrap_or_else(|e| fail_str(e)) };
     let mut max_phys = framebuffer.address.saturating_add(framebuffer.size);
     let count = map_slice.len() / map_desc_size;
     for i in 0..count {
@@ -510,7 +510,9 @@ pub extern "efiapi" fn efi_main(image: Handle, system_table: *mut SystemTable) -
             // mapped on demand when a driver claims the device.
             let usable = matches!(desc.ty, 1..=4 | 7 | 9 | 10 | 14);
             if usable {
-                let end = desc.physical_start.saturating_add(desc.number_of_pages * 0x1000);
+                let end = desc
+                    .physical_start
+                    .saturating_add(desc.number_of_pages * 0x1000);
                 max_phys = max_phys.max(end);
             }
         }
@@ -520,7 +522,10 @@ pub extern "efiapi" fn efi_main(image: Handle, system_table: *mut SystemTable) -
         log!("[warn] physical address space above 64 GiB; clamping direct map\n");
         max_phys = 64 * 1024 * 1024 * 1024;
     }
-    log!("[..] building page tables for {} GiB of physical address space\n", max_phys / (1024 * 1024 * 1024));
+    log!(
+        "[..] building page tables for {} GiB of physical address space\n",
+        max_phys / (1024 * 1024 * 1024)
+    );
 
     unsafe {
         tables
@@ -539,7 +544,11 @@ pub extern "efiapi" fn efi_main(image: Handle, system_table: *mut SystemTable) -
             .map_page(trampoline, trampoline, paging::PTE_GLOBAL)
             .unwrap_or_else(|e| fail_str(e));
     }
-    log!("[ok] kernel image mapped at {:#x}, direct map at {:#x}\n", paging::KERNEL_BASE, HHDM_OFFSET);
+    log!(
+        "[ok] kernel image mapped at {:#x}, direct map at {:#x}\n",
+        paging::KERNEL_BASE,
+        HHDM_OFFSET
+    );
 
     // --- BootInfo -----------------------------------------------------------
     let bootinfo_phys = unsafe {
@@ -593,14 +602,21 @@ pub extern "efiapi" fn efi_main(image: Handle, system_table: *mut SystemTable) -
         if attempts > 4 {
             fail("ExitBootServices failed after retries", status);
         }
-        log!("[warn] ExitBootServices retry {} (status {:#x})\n", attempts, status);
+        log!(
+            "[warn] ExitBootServices retry {} (status {:#x})\n",
+            attempts,
+            status
+        );
     }
     let _ = (map_key, map_version);
 
     // No boot services from this point on.
     unsafe {
         log!("\n[ok] ExitBootServices complete\n");
-        log!("[..] transferring control to the kernel at {:#x}\n", kernel.entry);
+        log!(
+            "[..] transferring control to the kernel at {:#x}\n",
+            kernel.entry
+        );
         log!("BOOT-HANDOFF-OK\n");
         enter_kernel(
             kernel.entry,

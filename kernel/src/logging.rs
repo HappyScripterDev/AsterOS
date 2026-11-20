@@ -79,13 +79,7 @@ pub fn log(args: fmt::Arguments) {
 /// Timestamped kernel message, e.g. `[   12.345] mm: ...`.
 pub fn log_line(level: &str, args: fmt::Arguments) {
     let ms = crate::time::uptime_ms();
-    let _ = write!(
-        Writer,
-        "[{:>6}.{:03}] {}: ",
-        ms / 1000,
-        ms % 1000,
-        level
-    );
+    let _ = write!(Writer, "[{:>6}.{:03}] {}: ", ms / 1000, ms % 1000, level);
     let _ = Writer.write_fmt(args);
     let _ = Writer.write_str("\n");
 }

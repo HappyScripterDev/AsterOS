@@ -73,7 +73,12 @@ unsafe fn ensure_table(entry_ptr: *mut u64, label: &'static str) -> Result<u64, 
     Ok(frame)
 }
 
-pub fn map_page(pml4: u64, virtual_address: u64, physical_address: u64, flags: u64) -> Result<(), &'static str> {
+pub fn map_page(
+    pml4: u64,
+    virtual_address: u64,
+    physical_address: u64,
+    flags: u64,
+) -> Result<(), &'static str> {
     if virtual_address & 0xFFF != 0 || physical_address & 0xFFF != 0 {
         return Err("unaligned mapping request");
     }
@@ -99,7 +104,8 @@ pub fn map_page(pml4: u64, virtual_address: u64, physical_address: u64, flags: u
     Ok(())
 }
 
-pub fn map_pages(    pml4: u64,
+pub fn map_pages(
+    pml4: u64,
     virtual_address: u64,
     physical_address: u64,
     length: usize,
@@ -148,7 +154,8 @@ pub fn unmap_page(pml4: u64, virtual_address: u64) -> Result<(), &'static str> {
     Ok(())
 }
 
-pub fn translate(pml4: u64, virtual_address: u64) -> Option<u64> {    unsafe {
+pub fn translate(pml4: u64, virtual_address: u64) -> Option<u64> {
+    unsafe {
         let pml4e = *entry(pml4, ((virtual_address >> 39) & 0x1FF) as usize);
         if pml4e & PTE_PRESENT == 0 {
             return None;

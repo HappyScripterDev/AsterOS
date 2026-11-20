@@ -9,7 +9,10 @@ static BOOT_INFO: AtomicU64 = AtomicU64::new(0);
 pub fn init(pointer: u64) -> &'static BootInfo {
     let info = unsafe { &*(pointer as *const BootInfo) };
     assert!(info.magic == BOOTINFO_MAGIC, "invalid BootInfo magic");
-    assert!(info.version == BOOTINFO_VERSION, "unsupported BootInfo version");
+    assert!(
+        info.version == BOOTINFO_VERSION,
+        "unsupported BootInfo version"
+    );
     assert!(info.hhdm_offset != 0, "BootInfo has no direct map");
     assert!(info.memory_map.desc_size >= 40, "invalid UEFI memory map");
     BOOT_INFO.store(pointer, Ordering::Relaxed);
@@ -78,7 +81,11 @@ pub fn module(name: &str) -> Option<&'static aster_abi::ModuleInfo> {
     let info = info();
     for index in 0..info.module_count as usize {
         let module = &info.modules[index];
-        let len = module.name.iter().position(|&b| b == 0).unwrap_or(module.name.len());
+        let len = module
+            .name
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(module.name.len());
         if len == name.len() && &module.name[..len] == name.as_bytes() {
             return Some(module);
         }

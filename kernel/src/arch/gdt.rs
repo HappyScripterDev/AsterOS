@@ -52,8 +52,7 @@ static TSS: SyncUnsafeCell<Tss> = SyncUnsafeCell::new(Tss::new());
 const GDT_ENTRIES: usize = 7;
 static GDT: SyncUnsafeCell<[u64; GDT_ENTRIES]> = SyncUnsafeCell::new([0; GDT_ENTRIES]);
 
-static DOUBLE_FAULT_STACK: SyncUnsafeCell<[u8; 16 * 1024]> =
-    SyncUnsafeCell::new([0; 16 * 1024]);
+static DOUBLE_FAULT_STACK: SyncUnsafeCell<[u8; 16 * 1024]> = SyncUnsafeCell::new([0; 16 * 1024]);
 
 static BOOT_STACK: SyncUnsafeCell<[u8; 32 * 1024]> = SyncUnsafeCell::new([0; 32 * 1024]);
 

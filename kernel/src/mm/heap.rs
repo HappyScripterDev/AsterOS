@@ -230,7 +230,8 @@ pub fn self_test() -> bool {
         values.push(alloc::vec![i as u8; 64 + (i % 97)]);
     }
     for (i, value) in values.iter().enumerate() {
-        if value.len() != 64 + (i % 97) || value[0] != i as u8 || value[value.len() - 1] != i as u8 {
+        if value.len() != 64 + (i % 97) || value[0] != i as u8 || value[value.len() - 1] != i as u8
+        {
             crate::error!("heap self-test: pattern mismatch at {}", i);
             return false;
         }

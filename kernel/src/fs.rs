@@ -65,7 +65,13 @@ impl Fs {
         1
     }
 
-    fn create(&mut self, parent: u64, name: &str, kind: NodeKind, data: Vec<u8>) -> Result<u64, i64> {
+    fn create(
+        &mut self,
+        parent: u64,
+        name: &str,
+        kind: NodeKind,
+        data: Vec<u8>,
+    ) -> Result<u64, i64> {
         if name.is_empty() || name.len() > 63 || name.contains('/') {
             return Err(crate::syscall::errno::EINVAL);
         }
@@ -73,9 +79,11 @@ impl Fs {
         if parent_node.kind != NodeKind::Dir {
             return Err(crate::syscall::errno::ENOTDIR);
         }
-        if parent_node.children.iter().any(|&child| {
-            self.node(child).map(|n| n.name == name).unwrap_or(false)
-        }) {
+        if parent_node
+            .children
+            .iter()
+            .any(|&child| self.node(child).map(|n| n.name == name).unwrap_or(false))
+        {
             return Err(crate::syscall::errno::EEXIST);
         }
         let id = self.next_id;
@@ -140,7 +148,10 @@ impl Fs {
         if id == self.root() {
             return;
         }
-        let children: Vec<u64> = self.node(id).map(|n| n.children.clone()).unwrap_or_default();
+        let children: Vec<u64> = self
+            .node(id)
+            .map(|n| n.children.clone())
+            .unwrap_or_default();
         for child in children {
             self.unlink_recursive(child);
         }
@@ -171,7 +182,17 @@ pub fn init() {
     });
     fs.next_id = 2;
 
-    let dirs = ["/home", "/home/user", "/home/user/Documents", "/home/user/notes", "/etc", "/system", "/var", "/var/log", "/apps"];
+    let dirs = [
+        "/home",
+        "/home/user",
+        "/home/user/Documents",
+        "/home/user/notes",
+        "/etc",
+        "/system",
+        "/var",
+        "/var/log",
+        "/apps",
+    ];
     for dir in dirs {
         let (parent, name) = fs.resolve_parent(dir).expect("seed directory");
         fs.create(parent, name, NodeKind::Dir, Vec::new())
@@ -420,7 +441,10 @@ pub fn self_test() -> bool {
     if read_whole("/tmp_test/a.txt").as_deref() != Some(b"hello aster".as_ref()) {
         return false;
     }
-    let id = match open("/tmp_test", aster_abi::open_flags::READ | aster_abi::open_flags::DIRECTORY) {
+    let id = match open(
+        "/tmp_test",
+        aster_abi::open_flags::READ | aster_abi::open_flags::DIRECTORY,
+    ) {
         Ok(id) => id,
         Err(_) => return false,
     };
@@ -428,7 +452,10 @@ pub fn self_test() -> bool {
         Ok(items) => items,
         Err(_) => return false,
     };
-    if !items.iter().any(|item| item.name == "a.txt" && item.size == 11) {
+    if !items
+        .iter()
+        .any(|item| item.name == "a.txt" && item.size == 11)
+    {
         return false;
     }
     if unlink("/tmp_test").is_err() {

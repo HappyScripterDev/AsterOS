@@ -61,7 +61,11 @@ pub fn handle(frame: *mut InterruptFrame) {
         crate::error!(
             "cr2={:#018x} ({})",
             cr2,
-            if f.error & 1 == 0 { "not present" } else { "protection" }
+            if f.error & 1 == 0 {
+                "not present"
+            } else {
+                "protection"
+            }
         );
     }
     crate::error!(
@@ -71,12 +75,7 @@ pub fn handle(frame: *mut InterruptFrame) {
         f.rcx,
         f.rdx
     );
-    crate::error!(
-        "rsi={:#x} rdi={:#x} rbp={:#x}",
-        f.rsi,
-        f.rdi,
-        f.rbp
-    );
+    crate::error!("rsi={:#x} rdi={:#x} rbp={:#x}", f.rsi, f.rdi, f.rbp);
     crate::error!(
         "r8={:#x} r9={:#x} r10={:#x} r11={:#x}",
         f.r8,

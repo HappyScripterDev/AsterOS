@@ -63,12 +63,7 @@ fn user_space_test() -> bool {
         None => return false,
     };
     let mut cursor = vmm::USER_BASE;
-    let address = match vmm::user_alloc(
-        pml4,
-        &mut cursor,
-        8192,
-        vmm::PTE_WRITE | vmm::PTE_NX,
-    ) {
+    let address = match vmm::user_alloc(pml4, &mut cursor, 8192, vmm::PTE_WRITE | vmm::PTE_NX) {
         Ok(address) => address,
         Err(_) => return false,
     };

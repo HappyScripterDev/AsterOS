@@ -39,7 +39,11 @@ impl PageTables {
     }
 
     /// Ensure the next-level table referenced by `entry` exists and return it.
-    unsafe fn ensure_table(&mut self, entry: *mut u64, label: &'static str) -> Result<*mut u64, &'static str> {
+    unsafe fn ensure_table(
+        &mut self,
+        entry: *mut u64,
+        label: &'static str,
+    ) -> Result<*mut u64, &'static str> {
         let value = *entry;
         if value & PTE_PRESENT != 0 {
             if value & PTE_HUGE != 0 {
@@ -77,12 +81,7 @@ impl PageTables {
         Ok(())
     }
 
-    pub unsafe fn map_2m(
-        &mut self,
-        virt: u64,
-        phys: u64,
-        flags: u64,
-    ) -> Result<(), &'static str> {
+    pub unsafe fn map_2m(&mut self, virt: u64, phys: u64, flags: u64) -> Result<(), &'static str> {
         let i4 = ((virt >> 39) & 0x1FF) as usize;
         let i3 = ((virt >> 30) & 0x1FF) as usize;
         let i2 = ((virt >> 21) & 0x1FF) as usize;

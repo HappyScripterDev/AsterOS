@@ -74,9 +74,7 @@ fn parse_elf(bytes: &[u8]) -> Result<UserImage, &'static str> {
         if vaddr & 0xFFF != 0 || memsz == 0 {
             return Err("ELF segment not page aligned");
         }
-        if vaddr < vmm::USER_BASE
-            || vaddr + memsz > vmm::USER_BASE + 0x0000_0000_1000_0000
-        {
+        if vaddr < vmm::USER_BASE || vaddr + memsz > vmm::USER_BASE + 0x0000_0000_1000_0000 {
             return Err("ELF segment outside the image window");
         }
         segments.push(Segment {
@@ -97,11 +95,7 @@ fn parse_elf(bytes: &[u8]) -> Result<UserImage, &'static str> {
     Ok(UserImage { entry, segments })
 }
 
-unsafe fn map_segment(
-    pml4: u64,
-    bytes: &[u8],
-    segment: &Segment,
-) -> Result<(), &'static str> {
+unsafe fn map_segment(pml4: u64, bytes: &[u8], segment: &Segment) -> Result<(), &'static str> {
     let pages = ((segment.memsz + vmm::PAGE_SIZE - 1) / vmm::PAGE_SIZE) as usize;
     for page in 0..pages {
         let frame = pmm::alloc_zeroed_frame().ok_or("out of physical memory")?;
@@ -121,7 +115,9 @@ unsafe fn map_segment(
         let page_start = page as u64 * vmm::PAGE_SIZE;
         if page_start < segment.filesz {
             let count = (segment.filesz - page_start).min(vmm::PAGE_SIZE) as usize;
-            let source = bytes.as_ptr().add(segment.offset as usize + page_start as usize);
+            let source = bytes
+                .as_ptr()
+                .add(segment.offset as usize + page_start as usize);
             core::ptr::copy_nonoverlapping(source, vmm::hhdm(frame) as *mut u8, count);
         }
     }
@@ -132,8 +128,7 @@ unsafe fn map_stack(pml4: u64) -> Result<u64, &'static str> {
     let pages = (sched::USER_STACK_SIZE / vmm::PAGE_SIZE) as usize;
     for page in 0..pages {
         let frame = pmm::alloc_zeroed_frame().ok_or("out of physical memory for stack")?;
-        let virtual_address =
-            vmm::USER_STACK_TOP - (page as u64 + 1) * vmm::PAGE_SIZE;
+        let virtual_address = vmm::USER_STACK_TOP - (page as u64 + 1) * vmm::PAGE_SIZE;
         if let Err(error) = vmm::map_page(
             pml4,
             virtual_address,
@@ -151,10 +146,7 @@ unsafe fn map_stack(pml4: u64) -> Result<u64, &'static str> {
 pub fn spawn_module(name: &str) -> Result<u64, &'static str> {
     let module = boot::module(name).ok_or("module not provided by the bootloader")?;
     let bytes = unsafe {
-        core::slice::from_raw_parts(
-            vmm::hhdm(module.address) as *const u8,
-            module.size as usize,
-        )
+        core::slice::from_raw_parts(vmm::hhdm(module.address) as *const u8, module.size as usize)
     };
     let image = parse_elf(bytes)?;
     let pml4 = vmm::create_user_pml4().ok_or("out of memory for a page table")?;

@@ -21,7 +21,9 @@ fn error(code: i64) -> u64 {
 
 pub fn handle(frame: &mut InterruptFrame) {
     let number = frame.rax;
-    let args = [frame.rdi, frame.rsi, frame.rdx, frame.r10, frame.r8, frame.r9];
+    let args = [
+        frame.rdi, frame.rsi, frame.rdx, frame.r10, frame.r8, frame.r9,
+    ];
     let process = sched::current_process();
     if process.is_null() {
         frame.rax = error(errno::EPERM);
@@ -192,7 +194,10 @@ fn read_path(pml4: u64, pointer: u64) -> Result<alloc::string::String, i64> {
     alloc::string::String::from_utf8(buffer[..length].to_vec()).map_err(|_| errno::EINVAL)
 }
 
-unsafe fn fd_slot(process: *mut sched::Process, fd: u32) -> Option<&'static mut crate::fs::OpenFile> {
+unsafe fn fd_slot(
+    process: *mut sched::Process,
+    fd: u32,
+) -> Option<&'static mut crate::fs::OpenFile> {
     let fds = &mut (*process).fds;
     fds.get_mut(fd as usize).and_then(|slot| slot.as_mut())
 }
@@ -242,7 +247,13 @@ fn read_file(pml4: u64, process: *mut sched::Process, fd: u32, pointer: u64, len
     data.len() as u64
 }
 
-fn write_file(pml4: u64, process: *mut sched::Process, fd: u32, pointer: u64, length: usize) -> u64 {
+fn write_file(
+    pml4: u64,
+    process: *mut sched::Process,
+    fd: u32,
+    pointer: u64,
+    length: usize,
+) -> u64 {
     let file = unsafe {
         match fd_slot(process, fd) {
             Some(file) => file,
@@ -324,11 +335,21 @@ fn read_directory(
     for (index, item) in items.iter().enumerate() {
         let mut entry = aster_abi::DirEntry {
             inode: item.inode,
-            ty: if item.kind == crate::fs::NodeKind::Dir { 1 } else { 0 },
+            ty: if item.kind == crate::fs::NodeKind::Dir {
+                1
+            } else {
+                0
+            },
             name_len: item.name.len() as u32,
             name: [0; aster_abi::DIRENT_NAME_LEN],
         };
-        for (i, byte) in item.name.as_bytes().iter().take(aster_abi::DIRENT_NAME_LEN).enumerate() {
+        for (i, byte) in item
+            .name
+            .as_bytes()
+            .iter()
+            .take(aster_abi::DIRENT_NAME_LEN)
+            .enumerate()
+        {
             entry.name[i] = *byte;
         }
         let bytes = unsafe {
@@ -424,7 +445,8 @@ fn process_list(pml4: u64, pointer: u64, maximum: usize) -> u64 {
     count as u64
 }
 
-fn shutdown() -> u64 {    unsafe {
+fn shutdown() -> u64 {
+    unsafe {
         // QEMU ACPI poweroff (q35) and the older i440fx mechanism.
         core::arch::asm!("out dx, ax", in("dx") 0x604u16, in("ax") 0x2000u16, options(nomem, nostack));
         core::arch::asm!("out dx, ax", in("dx") 0xB004u16, in("ax") 0x2000u16, options(nomem, nostack));

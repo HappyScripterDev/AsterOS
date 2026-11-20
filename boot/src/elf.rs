@@ -49,7 +49,10 @@ fn rd64(bytes: &[u8], off: usize) -> u64 {
 
 /// Load every PT_LOAD segment of an ELF64 image into freshly allocated
 /// physical pages. Returns the entry point and the segment map.
-pub unsafe fn load_kernel(bs: *mut BootServices, bytes: &[u8]) -> Result<LoadedKernel, &'static str> {
+pub unsafe fn load_kernel(
+    bs: *mut BootServices,
+    bytes: &[u8],
+) -> Result<LoadedKernel, &'static str> {
     if bytes.len() < 64 || &bytes[0..4] != b"\x7FELF" {
         return Err("kernel image is not an ELF file");
     }
@@ -67,7 +70,10 @@ pub unsafe fn load_kernel(bs: *mut BootServices, bytes: &[u8]) -> Result<LoadedK
     if phentsize < 56 || phnum == 0 || phnum > MAX_SEGMENTS {
         return Err("unsupported ELF program header count");
     }
-    if phoff.checked_add(phentsize * phnum).map_or(true, |end| end > bytes.len()) {
+    if phoff
+        .checked_add(phentsize * phnum)
+        .map_or(true, |end| end > bytes.len())
+    {
         return Err("ELF program headers out of bounds");
     }
 
@@ -93,7 +99,10 @@ pub unsafe fn load_kernel(bs: *mut BootServices, bytes: &[u8]) -> Result<LoadedK
         if filesz > memsz {
             return Err("ELF segment file size exceeds memory size");
         }
-        if offset.checked_add(filesz as usize).map_or(true, |end| end > bytes.len()) {
+        if offset
+            .checked_add(filesz as usize)
+            .map_or(true, |end| end > bytes.len())
+        {
             return Err("ELF segment data out of bounds");
         }
         if vaddr & 0xFFF != 0 || memsz == 0 {
@@ -101,8 +110,7 @@ pub unsafe fn load_kernel(bs: *mut BootServices, bytes: &[u8]) -> Result<LoadedK
         }
 
         let pages = ((memsz + 0xFFF) / 0x1000) as usize;
-        let phys: u64 =
-            allocate_pages(bs, pages).map_err(|_| "out of memory loading kernel")?;
+        let phys: u64 = allocate_pages(bs, pages).map_err(|_| "out of memory loading kernel")?;
         core::ptr::copy_nonoverlapping(
             bytes.as_ptr().add(offset),
             phys as *mut u8,

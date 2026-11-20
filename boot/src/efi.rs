@@ -31,20 +31,45 @@ pub struct Guid {
 
 impl Guid {
     pub const fn new(data1: u32, data2: u16, data3: u16, data4: [u8; 8]) -> Self {
-        Self { data1, data2, data3, data4 }
+        Self {
+            data1,
+            data2,
+            data3,
+            data4,
+        }
     }
 }
 
-pub const LOADED_IMAGE_GUID: Guid =
-    Guid::new(0x5B1B31A1, 0x9562, 0x11d2, [0x8E, 0x3F, 0x00, 0xA0, 0xC9, 0x69, 0x72, 0x3B]);
-pub const SIMPLE_FILE_SYSTEM_GUID: Guid =
-    Guid::new(0x964E5B22, 0x6459, 0x11d2, [0x8E, 0x39, 0x00, 0xA0, 0xC9, 0x69, 0x72, 0x3B]);
-pub const FILE_INFO_GUID: Guid =
-    Guid::new(0x09576E92, 0x6D3F, 0x11d2, [0x8E, 0x39, 0x00, 0xA0, 0xC9, 0x69, 0x72, 0x3B]);
-pub const GRAPHICS_OUTPUT_GUID: Guid =
-    Guid::new(0x9042A9DE, 0x23DC, 0x4A38, [0x96, 0xFB, 0x7A, 0xDE, 0xD0, 0x80, 0x51, 0x6A]);
-pub const ACPI2_TABLE_GUID: Guid =
-    Guid::new(0x8868E871, 0xE4F1, 0x11D3, [0xBC, 0x22, 0x00, 0x80, 0xC7, 0x3C, 0x88, 0x81]);
+pub const LOADED_IMAGE_GUID: Guid = Guid::new(
+    0x5B1B31A1,
+    0x9562,
+    0x11d2,
+    [0x8E, 0x3F, 0x00, 0xA0, 0xC9, 0x69, 0x72, 0x3B],
+);
+pub const SIMPLE_FILE_SYSTEM_GUID: Guid = Guid::new(
+    0x964E5B22,
+    0x6459,
+    0x11d2,
+    [0x8E, 0x39, 0x00, 0xA0, 0xC9, 0x69, 0x72, 0x3B],
+);
+pub const FILE_INFO_GUID: Guid = Guid::new(
+    0x09576E92,
+    0x6D3F,
+    0x11d2,
+    [0x8E, 0x39, 0x00, 0xA0, 0xC9, 0x69, 0x72, 0x3B],
+);
+pub const GRAPHICS_OUTPUT_GUID: Guid = Guid::new(
+    0x9042A9DE,
+    0x23DC,
+    0x4A38,
+    [0x96, 0xFB, 0x7A, 0xDE, 0xD0, 0x80, 0x51, 0x6A],
+);
+pub const ACPI2_TABLE_GUID: Guid = Guid::new(
+    0x8868E871,
+    0xE4F1,
+    0x11D3,
+    [0xBC, 0x22, 0x00, 0x80, 0xC7, 0x3C, 0x88, 0x81],
+);
 
 #[repr(C)]
 pub struct TableHeader {
@@ -106,8 +131,7 @@ pub struct BootServices {
         pages: usize,
         memory: *mut PhysicalAddress,
     ) -> Status,
-    pub free_pages:
-        unsafe extern "efiapi" fn(memory: PhysicalAddress, pages: usize) -> Status,
+    pub free_pages: unsafe extern "efiapi" fn(memory: PhysicalAddress, pages: usize) -> Status,
     pub get_memory_map: unsafe extern "efiapi" fn(
         size: *mut usize,
         map: *mut u8,
@@ -137,8 +161,7 @@ pub struct BootServices {
     pub start_image: usize,
     pub exit: usize,
     pub unload_image: usize,
-    pub exit_boot_services:
-        unsafe extern "efiapi" fn(image: Handle, map_key: usize) -> Status,
+    pub exit_boot_services: unsafe extern "efiapi" fn(image: Handle, map_key: usize) -> Status,
     pub get_next_monotonic_count: usize,
     pub stall: unsafe extern "efiapi" fn(microseconds: usize) -> Status,
     pub set_watchdog_timer: unsafe extern "efiapi" fn(
@@ -246,8 +269,10 @@ impl FileProtocol {
 #[repr(C)]
 pub struct SimpleFileSystem {
     pub revision: u64,
-    pub open_volume:
-        unsafe extern "efiapi" fn(this: *mut SimpleFileSystem, root: *mut *mut FileProtocol) -> Status,
+    pub open_volume: unsafe extern "efiapi" fn(
+        this: *mut SimpleFileSystem,
+        root: *mut *mut FileProtocol,
+    ) -> Status,
 }
 
 #[repr(C)]
@@ -280,8 +305,7 @@ pub struct GopMode {
     pub frame_buffer_size: usize,
 }
 
-pub type GopSetMode =
-    unsafe extern "efiapi" fn(this: *mut GraphicsOutput, mode: u32) -> Status;
+pub type GopSetMode = unsafe extern "efiapi" fn(this: *mut GraphicsOutput, mode: u32) -> Status;
 
 pub type GopQueryMode = unsafe extern "efiapi" fn(
     this: *mut GraphicsOutput,
@@ -316,8 +340,14 @@ pub unsafe fn open_protocol<T>(
 ) -> Result<*mut T, Status> {
     let mut interface: *mut c_void = core::ptr::null_mut();
     // Attributes: BY_HANDLE_PROTOCOL (0x02) avoids a CloseProtocol requirement.
-    let status =
-        ((*bs).open_protocol)(handle, guid, &mut interface, core::ptr::null_mut(), core::ptr::null_mut(), 0x02);
+    let status = ((*bs).open_protocol)(
+        handle,
+        guid,
+        &mut interface,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        0x02,
+    );
     if status != EFI_SUCCESS {
         return Err(status);
     }
@@ -336,10 +366,12 @@ pub unsafe fn locate_protocol<T>(bs: *mut BootServices, guid: &Guid) -> Result<*
     Ok(interface as *mut T)
 }
 
-pub unsafe fn allocate_pages(bs: *mut BootServices, pages: usize) -> Result<PhysicalAddress, Status> {
+pub unsafe fn allocate_pages(
+    bs: *mut BootServices,
+    pages: usize,
+) -> Result<PhysicalAddress, Status> {
     let mut address: PhysicalAddress = 0;
-    let status =
-        ((*bs).allocate_pages)(ALLOCATE_ANY_PAGES, EFI_LOADER_DATA, pages, &mut address);
+    let status = ((*bs).allocate_pages)(ALLOCATE_ANY_PAGES, EFI_LOADER_DATA, pages, &mut address);
     if status != EFI_SUCCESS {
         return Err(status);
     }

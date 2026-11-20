@@ -86,8 +86,7 @@ static SCHED: IrqLock<Scheduler> = IrqLock::new(Scheduler {
 });
 
 static CURRENT: AtomicU64 = AtomicU64::new(0);
-static NEED_RESCHED: core::sync::atomic::AtomicBool =
-    core::sync::atomic::AtomicBool::new(false);
+static NEED_RESCHED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 static STARTED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
 static BOOT_RSP: SyncUnsafeCell<u64> = SyncUnsafeCell::new(0);
@@ -173,7 +172,17 @@ unsafe fn name_bytes(name: &str) -> [u8; 20] {
 }
 
 pub fn init() {
-    let idle = unsafe { create_thread_raw("idle", idle_entry as usize as u64, false, 0, 0, vmm::kernel_pml4(), core::ptr::null_mut()) };
+    let idle = unsafe {
+        create_thread_raw(
+            "idle",
+            idle_entry as usize as u64,
+            false,
+            0,
+            0,
+            vmm::kernel_pml4(),
+            core::ptr::null_mut(),
+        )
+    };
     let mut sched = SCHED.lock();
     sched.idle = idle;
     sched.current = idle;
@@ -197,8 +206,8 @@ unsafe fn create_thread_raw(
     cr3: u64,
     process: *mut Process,
 ) -> *mut Thread {
-    let (stack_base, stack_top) = allocate_stack(KERNEL_STACK_SIZE)
-        .expect("cannot allocate a kernel stack");
+    let (stack_base, stack_top) =
+        allocate_stack(KERNEL_STACK_SIZE).expect("cannot allocate a kernel stack");
     let rsp = prepare_stack(stack_top, entry);
 
     let thread = alloc::boxed::Box::into_raw(alloc::boxed::Box::new(Thread {
@@ -366,7 +375,8 @@ pub fn current_pid() -> u64 {
 }
 
 /// Runtime information for `SystemInfo`.
-pub fn counts() -> (u32, u32, u64) {    let sched = SCHED.lock();
+pub fn counts() -> (u32, u32, u64) {
+    let sched = SCHED.lock();
     let threads = sched
         .threads
         .iter()
@@ -440,11 +450,7 @@ unsafe fn reap(sched: &mut Scheduler) {
         let thread = sched.threads[index];
         if thread != current && (*thread).state == ThreadState::Dead {
             let process = (*thread).process;
-            let layout = Layout::from_size_align(
-                (*thread).kernel_stack_size,
-                16,
-            )
-            .unwrap();
+            let layout = Layout::from_size_align((*thread).kernel_stack_size, 16).unwrap();
             dealloc((*thread).kernel_stack_base as *mut u8, layout);
             drop(alloc::boxed::Box::from_raw(thread));
             sched.threads.remove(index);
@@ -668,7 +674,11 @@ pub fn handle_user_page_fault(frame: &InterruptFrame, address: u64) -> bool {
         current_tid(),
         frame.rip,
         address,
-        if frame.error & 1 == 0 { "not present" } else { "protection" }
+        if frame.error & 1 == 0 {
+            "not present"
+        } else {
+            "protection"
+        }
     );
     crate::error!("terminating the offending process");
     exit_current(-11)

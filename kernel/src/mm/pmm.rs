@@ -4,9 +4,9 @@
 //! Frame 0 is never returned; the first megabyte is reserved for firmware
 //! structures and real-mode compatibility.
 
-use aster_abi::MemoryType;
 use crate::boot;
 use crate::sync::{IrqLock, SyncUnsafeCell};
+use aster_abi::MemoryType;
 
 pub const PAGE_SIZE: usize = 4096;
 const MAX_FRAMES: usize = 8 * 1024 * 1024; // 32 GiB
@@ -164,11 +164,7 @@ pub fn free_frame(address: u64) {
 pub fn alloc_zeroed_frame() -> Option<u64> {
     let frame = alloc_frame()?;
     unsafe {
-        core::ptr::write_bytes(
-            boot::physical_to_virtual(frame) as *mut u8,
-            0,
-            PAGE_SIZE,
-        );
+        core::ptr::write_bytes(boot::physical_to_virtual(frame) as *mut u8, 0, PAGE_SIZE);
     }
     Some(frame)
 }
