@@ -43,6 +43,21 @@ pub fn handle(frame: *mut InterruptFrame) {
         }
     }
 
+    // Any other exception raised by ring 3 belongs to the process, not to the
+    // kernel: kill the offender and keep the system alive. A user `ud2`, a
+    // divide error or a general-protection fault must never halt the machine.
+    if f.from_user() {
+        crate::error!(
+            "user exception: pid {} tid {} {} at rip {:#x} (error {:#x})",
+            crate::sched::current_pid(),
+            crate::sched::current_tid(),
+            name(f.vector),
+            f.rip,
+            f.error
+        );
+        crate::sched::exit_current(-11);
+    }
+
     crate::error!("================================================");
     crate::error!("{} (vector {})", name(f.vector), f.vector);
     crate::error!("error code {:#x}", f.error);

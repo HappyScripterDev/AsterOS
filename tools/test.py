@@ -19,7 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from run import Qmp, find_ovmf, find_qemu, IMAGE  # noqa: E402
+from run import Qmp, DATA_IMAGE, drive_args, find_ovmf, find_qemu  # noqa: E402
 
 MARKERS = [
     "BOOT-LOADER-START",
@@ -27,6 +27,10 @@ MARKERS = [
     "KERNEL-ENTRY-OK",
     "KERNEL-READY",
     "DESKTOP-READY",
+]
+STORAGE_MARKERS = [
+    "storage: FAT32",
+    "storage: FAT32 read self-test passed",
 ]
 FORBIDDEN = ["KERNEL PANIC", "user fault", "PANIC:", "system halted"]
 
@@ -49,7 +53,7 @@ def boot_smoke() -> None:
         "-drive", f"if=pflash,format=raw,readonly=on,file={find_ovmf()}",
         "-device", "VGA", "-rtc", "base=localtime", "-no-reboot",
         "-serial", f"file:{serial}", "-monitor", "none",
-        "-drive", f"file={IMAGE},format=raw,if=ide,index=0",
+        *drive_args(),
         "-display", "none", "-vnc", "127.0.0.1:9",
         "-qmp", f"tcp:127.0.0.1:{port},server=on,wait=off",
     ]
@@ -79,6 +83,8 @@ def boot_smoke() -> None:
 
     text = serial.read_text(errors="replace")
     missing = [marker for marker in MARKERS if marker not in text]
+    if DATA_IMAGE.exists():
+        missing += [marker for marker in STORAGE_MARKERS if marker not in text]
     faults = [token for token in FORBIDDEN if token in text]
     if missing:
         print(f"FAIL: missing boot markers: {missing}")

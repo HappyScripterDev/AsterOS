@@ -203,6 +203,26 @@ pub fn read_dir(path: &str) -> Option<alloc::vec::Vec<(alloc::string::String, bo
     Some(entries)
 }
 
+pub fn storage_info() -> Option<aster_abi::StorageInfo> {
+    let mut info: aster_abi::StorageInfo = unsafe { core::mem::zeroed() };
+    let result = unsafe {
+        syscall6(
+            sys::STORAGE_INFO,
+            &mut info as *mut aster_abi::StorageInfo as u64,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    if result < 0 {
+        None
+    } else {
+        Some(info)
+    }
+}
+
 pub fn stat(path: &str) -> Option<aster_abi::FileStat> {
     let (buffer, _) = path_buffer(path);
     let mut stat: aster_abi::FileStat = unsafe { core::mem::zeroed() };

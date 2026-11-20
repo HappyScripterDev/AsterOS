@@ -94,6 +94,7 @@ explicit limitation, not a hidden one.
 | PS/2 event flood | 256-event ring drops oldest instead of growing | No rate limiting or per-device quotas |
 | Mouse coordinates out of range | Clamped to framebuffer dimensions | Firmware-provided stride/resolution is trusted after validation |
 | Framebuffer writes | Only the desktop maps it; user VA, NX, write-only | No IOMMU; a kernel bug could map arbitrary physical memory |
+| DMA from a disk controller | AHCI PRDTs point only at dedicated PMM frames; no user pointer is programmed | No IOMMU; a driver bug could DMA elsewhere |
 | Serial input | Not used as a command channel | No authentication if it becomes one |
 
 ### 4.4 Filesystem
@@ -101,10 +102,11 @@ explicit limitation, not a hidden one.
 | Threat | Mitigation today | Gap |
 |---|---|---|
 | Path traversal (`..`) | Resolver clamps at root | No per-process root/jail |
-| Access control | None: ramfs is global, 0644/0755 are informational | No uid/gid enforcement, ACLs, or capabilities |
+| Access control | None: the ramfs and the FAT32 home are global; 0644/0755 are informational | No uid/gid enforcement, ACLs, or capabilities |
 | Symlink attacks | Symlinks are not implemented | Future AFS must handle them carefully |
-| Disk corruption | No disk filesystem yet | AFS checksums/journal not implemented |
-| Data loss on power-off | None; ramfs is volatile | Persistence is a known gap |
+| Disk corruption | GPT header CRC, FAT geometry checks, bounded chain walks, `EIO` on malformed metadata | No journal/checksums; a torn multi-sector write can truncate a file |
+| Data loss on power-off | `/home/user` is persistent when the data disk is present | System files remain volatile; writes are synchronous but not atomic |
+| Boot image corruption | The kernel only reads the ESP; user data is on a separate disk | Physical access can still replace the boot image |
 
 ### 4.5 Desktop and applications
 
@@ -126,15 +128,15 @@ sections state "Not implemented" and no Store/Updater app exists.
 
 These are properties the current tests actually exercise:
 
-1. A ring-3 page fault is contained: the kernel logs pid/tid/RIP/CR2 and kills
-   only that thread; the system continues (observed in development when the
-   user mapping lacked U/S bits).
+1. Any exception raised by ring 3 is contained: the kernel logs pid/tid/vector
+   and terminates that process; the desktop continues. Page faults, `ud2`,
+   divide errors and general-protection faults are covered by the same path.
 2. User pages require U/S at every paging level; the initial bug produced a
    protection fault and was fixed in `vmm::map_page`.
-3. W^X for user segments is enforced by ELF flags (NX for non-executable
-   segments, no write+execute mapping).
-4. Syscall buffers are validated; a bad pointer returns `EINVAL` rather than
-   faulting the kernel.
+3. W^X for user segments is enforced by the loader: writable-and-executable
+   segments are rejected, non-executable segments get NX, and CR0.WP is set.
+4. Syscall buffers are validated page by page; the leaf must be user-accessible
+   (and writable for output), otherwise `EINVAL` is returned without a fault.
 5. The desktop cannot execute privileged instructions; all hardware access is
    through syscalls and the framebuffer mapping.
 
@@ -150,6 +152,8 @@ third-party security audit has been performed.
 - No ASLR/KASLR; addresses are predictable.
 - No SMEP/SMAP/UMIP; kernel pointer bugs are more dangerous.
 - No resource quotas; a malicious app can exhaust memory or the event queue.
+- The persistent home is world-readable and world-writable, uses 8.3 names, and
+  has no journal; a power loss can truncate a file.
 - No audit log exposed to user space.
 
 Each risk has an owner and a milestone in `docs/ROADMAP.md`. Security claims in

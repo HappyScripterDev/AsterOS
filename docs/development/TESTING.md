@@ -21,6 +21,8 @@ python tools/ui_test.py
 python tools/app_probe.py
 python tools/pointer_test.py
 python tools/wm_probe.py
+python tools/storage_probe.py
+python tools/persistence_test.py
 
 # Boot/frame benchmark
 python tools/bench.py
@@ -46,7 +48,8 @@ These run without QEMU and are fast (<1 s).
 ### Kernel self-tests (boot-time, serial)
 
 - `heap::self_test`: 256 variable-size allocations with content checks, free,
-  then a 512 KiB allocation; asserts no leak in the allocated counter.
+  a 512 KiB allocation, then a 1 MiB allocation that forces chunk coalescing;
+  asserts no leak in the allocated counter.
 - `mm::selftest::frame_test`: allocate a zeroed frame, write patterns through
   the direct map, map it at a kernel VA, verify translation and reads, unmap,
   free.
@@ -82,6 +85,11 @@ Drives QEMU via QMP:
 4. open the launcher and search for Settings,
 5. open Settings and the control centre.
 
+`storage_probe.py` checks the Settings capacity page, boots without a data
+disk, and rejects a zeroed FAT boot sector without a fault.
+`persistence_test.py` writes through the Terminal, verifies the guest-written
+volume with the host FAT parser, reboots, and reads the file and settings back.
+
 `app_probe.py` opens every built-in app in turn through Spotlight and
 captures a screenshot. `pointer_test.py` verifies relative pointer motion, the
 dock, the notification centre, the Control Centre and display brightness.
@@ -111,8 +119,9 @@ desktop's own frame-time log. Results are recorded in
 | Window manager | Partial | Yes | drag/desktop probe; resize/snap manual; macOS-style traffic lights |
 | Launcher/control centre/theme | Yes | Yes | UI probes |
 | Terminal commands | Manual | Yes | `help`, `ls`, `cat`, `write`, `theme` |
-| Files/Text/Notes persistence | Manual | Yes | ramfs only; lost on shutdown |
-| Networking/audio/storage | Not applicable | - | not implemented |
+| Persistent home | Implemented | Yes | write/reboot/read plus host FAT verification |
+| Missing/corrupt data disk | Implemented | Yes | desktop boots; mount rejected; no fault |
+| Networking/audio | Not applicable | - | not implemented |
 | SMP/APIC | Not applicable | - | not implemented |
 | Security isolation | Partial | - | ring-3 faults are handled; no exploit tests |
 

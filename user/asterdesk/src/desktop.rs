@@ -172,6 +172,8 @@ pub struct Desktop {
 
     theme: Theme,
 
+    saved_theme: Option<Theme>,
+
     wallpaper: Vec<u32>,
 
     blurred: Vec<u32>,
@@ -239,6 +241,8 @@ impl Desktop {
             height,
 
             theme: Theme::default(),
+
+            saved_theme: None,
 
             wallpaper: vec![0; (width * height) as usize],
 
@@ -373,7 +377,7 @@ impl Desktop {
     }
 
     fn load_preferences(&mut self) {
-        let Some(data) = sys::read_file("/home/user/settings.conf") else {
+        let Some(data) = sys::read_file("/home/user/SETTINGS.CNF") else {
             return;
         };
 
@@ -409,9 +413,15 @@ impl Desktop {
                 _ => {}
             }
         }
+
+        self.saved_theme = Some(self.theme);
     }
 
-    fn save_preferences(&self) {
+    fn save_preferences(&mut self) {
+        if self.saved_theme == Some(self.theme) {
+            return;
+        }
+
         let name = theme::ACCENTS[self.theme.accent_index.min(theme::ACCENTS.len() - 1)]
             .name
             .to_lowercase();
@@ -432,7 +442,9 @@ impl Desktop {
 
         );
 
-        sys::write_file("/home/user/settings.conf", content.as_bytes());
+        sys::write_file("/home/user/SETTINGS.CNF", content.as_bytes());
+
+        self.saved_theme = Some(self.theme);
     }
 
     fn rebuild_wallpaper(&mut self) {

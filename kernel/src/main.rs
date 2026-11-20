@@ -29,12 +29,13 @@ mod fs;
 mod logging;
 mod mm;
 mod sched;
+mod storage;
 mod sync;
 mod syscall;
 mod time;
 mod user;
 
-pub const VERSION: &str = "0.1.0 (developer preview)";
+pub const VERSION: &str = "0.2.0 (core milestone)";
 
 global_asm!(
     r#"
@@ -112,6 +113,7 @@ pub extern "C" fn kernel_main(boot_info_address: u64) -> ! {
     }
     crate::info!("mm: mapping and user address-space tests passed");
 
+    storage::init();
     fs::init();
     if !fs::self_test() {
         crate::error!("ramfs self-test failed");

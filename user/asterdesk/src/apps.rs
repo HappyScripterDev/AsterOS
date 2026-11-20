@@ -346,24 +346,6 @@ fn local(content: Rect, x: i32, y: i32) -> (i32, i32) {
     (x - content.x, y - content.y)
 }
 
-fn file_icon(name: &str, is_dir: bool) -> Icon {
-    if is_dir {
-        return Icon::Folder;
-    }
-
-    if name.ends_with(".txt")
-        || name.ends_with(".md")
-        || name.ends_with(".conf")
-        || name.ends_with(".log")
-    {
-        Icon::Text
-    } else if name.ends_with(".png") || name.ends_with(".ppm") {
-        Icon::Photos
-    } else {
-        Icon::File
-    }
-}
-
 // ===========================================================================
 
 // Terminal
@@ -534,7 +516,7 @@ impl TerminalApp {
 
             "uname" => self
                 .lines
-                .push("Aster OS 0.1.0 x86_64 (aster kernel)".to_string()),
+                .push("Aster OS 0.2.0 x86_64 (aster kernel)".to_string()),
 
             "date" => match sys::rtc() {
                 Some(t) => self.lines.push(format!(
@@ -897,8 +879,8 @@ impl FilesApp {
 
         let places = [
             ("Home", "/home/user", Icon::Home),
-            ("Documents", "/home/user/Documents", Icon::Folder),
-            ("Notes", "/home/user/notes", Icon::Notes),
+            ("Documents", "/home/user/DOCS", Icon::Folder),
+            ("Notes", "/home/user/NOTES", Icon::Notes),
             ("System", "/system", Icon::Settings),
             ("Logs", "/var/log", Icon::Text),
             ("Root", "/", Icon::Storage),
@@ -1017,18 +999,13 @@ impl FilesApp {
                 surface.fill_rounded(row, 6, theme.accent_color());
             }
 
-            let color = if index == self.selected {
-                Color::rgb(255, 255, 255)
-            } else {
-                palette.secondary
-            };
+            let _ = palette.secondary;
 
-            ui::draw_icon(
+            ui::draw_file_icon(
                 surface,
-                file_icon(name, *is_dir),
-                Rect::new(row.x + 8, row.y + 8, 16, 16),
-                color,
-                1,
+                Rect::new(row.x + 8, row.y + 7, 18, 18),
+                *is_dir,
+                index == self.selected,
                 theme,
             );
 
@@ -1067,8 +1044,8 @@ impl FilesApp {
         if lx < 176 {
             let places = [
                 "/home/user",
-                "/home/user/Documents",
-                "/home/user/notes",
+                "/home/user/DOCS",
+                "/home/user/NOTES",
                 "/system",
                 "/var/log",
                 "/",
@@ -1462,11 +1439,49 @@ impl SettingsApp {
 
             7 => {
 
-                self.info_row(surface, x, &mut cy, width, theme, "Filesystem", "ramfs (in memory)");
+                match sys::storage_info() {
 
-                self.info_row(surface, x, &mut cy, width, theme, "Persistence", "None: data is lost on shutdown");
+                    Some(info) if info.mounted != 0 => {
 
-                self.info_row(surface, x, &mut cy, width, theme, "On-disk AFS", "Not implemented");
+                        self.info_row(surface, x, &mut cy, width, theme, "Home volume", "FAT32 on the data disk");
+
+                        self.info_row(
+                            surface,
+                            x,
+                            &mut cy,
+                            width,
+                            theme,
+                            "Capacity",
+                            &format!("{:.1} MiB", info.total_bytes as f64 / (1024.0 * 1024.0)),
+                        );
+
+                        self.info_row(
+                            surface,
+                            x,
+                            &mut cy,
+                            width,
+                            theme,
+                            "Free",
+                            &format!("{:.1} MiB", info.free_bytes as f64 / (1024.0 * 1024.0)),
+                        );
+
+                        self.info_row(surface, x, &mut cy, width, theme, "Boot disk", "Read only");
+
+                        self.info_row(surface, x, &mut cy, width, theme, "Durability", "No journal");
+
+                    }
+
+                    _ => {
+
+                        self.info_row(surface, x, &mut cy, width, theme, "Home volume", "Memory only");
+
+                        self.info_row(surface, x, &mut cy, width, theme, "Data disk", "Not attached");
+
+                        self.info_row(surface, x, &mut cy, width, theme, "Durability", "Lost on shutdown");
+
+                    }
+
+                }
 
                 if let Some(info) = sys::system_info() {
 
@@ -1542,11 +1557,11 @@ impl SettingsApp {
 
                 cy += logo_card.h + 18;
 
-                surface.draw_text(x, cy, "Aster OS 0.1.0", HEADLINE, palette.text);
+                surface.draw_text(x, cy, "Aster OS 0.2.0", HEADLINE, palette.text);
 
                 cy += 36;
 
-                self.info_row(surface, x, &mut cy, width, theme, "Kernel", "aster 0.1.0 (higher half, x86_64)");
+                self.info_row(surface, x, &mut cy, width, theme, "Kernel", "aster 0.2.0 (higher half, x86_64)");
 
                 self.info_row(surface, x, &mut cy, width, theme, "ABI", "Aster ABI 1");
 
@@ -2416,7 +2431,7 @@ pub struct TextApp {
 impl TextApp {
     fn new(path: Option<&str>) -> Self {
         let mut app = Self {
-            path: "/home/user/Documents/untitled.txt".to_string(),
+            path: "/home/user/DOCS/UNTITLED.TXT".to_string(),
 
             text: String::new(),
 
@@ -2696,7 +2711,7 @@ impl TextApp {
             code if code == b's' as u32 && ctrl => return Some(self.save()),
 
             code if code == b'n' as u32 && ctrl => {
-                self.path = "/home/user/Documents/untitled.txt".to_string();
+                self.path = "/home/user/DOCS/UNTITLED.TXT".to_string();
 
                 self.text.clear();
 
@@ -2724,7 +2739,7 @@ impl TextApp {
             }
 
             if lx >= content.w - 176 && lx < content.w - 100 {
-                self.path = "/home/user/Documents/untitled.txt".to_string();
+                self.path = "/home/user/DOCS/UNTITLED.TXT".to_string();
 
                 self.text.clear();
 
@@ -2789,7 +2804,7 @@ impl NotesApp {
         app.reload();
 
         if app.notes.is_empty() {
-            let path = "/home/user/notes/first-note.txt".to_string();
+            let path = "/home/user/NOTES/FIRST-NOTE.TXT".to_string();
 
             let _ = sys::write_file(
                 &path,
@@ -2807,7 +2822,7 @@ impl NotesApp {
     fn reload(&mut self) {
         self.notes.clear();
 
-        if let Some(entries) = sys::read_dir("/home/user/notes") {
+        if let Some(entries) = sys::read_dir("/home/user/NOTES") {
             let mut names: Vec<(String, bool)> = entries
                 .into_iter()
                 .map(|(name, is_dir, _)| (name, is_dir))
@@ -2817,7 +2832,7 @@ impl NotesApp {
 
             for (name, is_dir) in names {
                 if !is_dir {
-                    let path = format!("/home/user/notes/{}", name);
+                    let path = format!("/home/user/NOTES/{}", name);
 
                     self.notes.push((name, path));
                 }
@@ -2864,11 +2879,21 @@ impl NotesApp {
     }
 
     fn new_note(&mut self) -> Option<Action> {
-        let stamp = sys::time_ms();
+        // Persistent note names must not collide across reboots, and the
+        // volume uses 8.3 names: NOTE-1.TXT, NOTE-2.TXT, ...
+        let mut index = 1u32;
 
-        let name = format!("note-{}.txt", stamp / 1000);
+        let (name, path) = loop {
+            let candidate = format!("NOTE-{}.TXT", index);
 
-        let path = format!("/home/user/notes/{}", name);
+            let path = format!("/home/user/NOTES/{}", candidate);
+
+            if sys::stat(&path).is_none() || index >= 999 {
+                break (candidate, path);
+            }
+
+            index += 1;
+        };
 
         if sys::write_file(&path, b"New note\n") {
             self.reload();

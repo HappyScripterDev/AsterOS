@@ -48,6 +48,7 @@ fn align_up(value: usize, align: usize) -> usize {
 unsafe fn add_block(heap: &mut Heap, block: *mut Block) {
     if heap.head.is_null() {
         heap.head = block;
+        coalesce(heap, block);
         return;
     }
     let mut current = heap.head;
@@ -60,6 +61,46 @@ unsafe fn add_block(heap: &mut Heap, block: *mut Block) {
         (*(*current).next).prev = block;
     }
     (*current).next = block;
+    coalesce(heap, block);
+}
+
+/// Merge adjacent free blocks. Growth appends 1 MiB chunks, so merging is what
+/// lets a single allocation exceed one chunk.
+unsafe fn coalesce(heap: &mut Heap, block: *mut Block) {
+    let next = (*block).next;
+    if !next.is_null()
+        && (*next).free
+        && (block as usize).saturating_add((*block).size) == next as usize
+    {
+        (*block).size += (*next).size;
+        (*block).next = (*next).next;
+        if !(*block).next.is_null() {
+            (*(*block).next).prev = block;
+        }
+    }
+    let previous = (*block).prev;
+    if !previous.is_null()
+        && (*previous).free
+        && (previous as usize).saturating_add((*previous).size) == block as usize
+    {
+        (*previous).size += (*block).size;
+        (*previous).next = (*block).next;
+        if !(*previous).next.is_null() {
+            (*(*previous).next).prev = previous;
+        }
+    }
+    let _ = heap;
+}
+
+unsafe fn rollback_growth(virtual_base: u64, pages: usize) {
+    for index in 0..pages {
+        let address = virtual_base + index as u64 * pmm::PAGE_SIZE as u64;
+        if let Some(physical) = vmm::translate(vmm::kernel_pml4(), address) {
+            if vmm::unmap_page(vmm::kernel_pml4(), address).is_ok() {
+                pmm::free_frame(physical);
+            }
+        }
+    }
 }
 
 unsafe fn grow(heap: &mut Heap) -> bool {
@@ -68,10 +109,14 @@ unsafe fn grow(heap: &mut Heap) -> bool {
     }
     let virtual_base = vmm::HEAP_BASE + heap.mapped as u64;
     let pages = GROW_SIZE / pmm::PAGE_SIZE;
+    let mut mapped = 0usize;
     for index in 0..pages {
         let frame = match pmm::alloc_frame() {
             Some(frame) => frame,
-            None => return false,
+            None => {
+                rollback_growth(virtual_base, mapped);
+                return false;
+            }
         };
         if let Err(error) = vmm::map_page(
             vmm::kernel_pml4(),
@@ -80,9 +125,11 @@ unsafe fn grow(heap: &mut Heap) -> bool {
             vmm::PTE_WRITE | vmm::PTE_NX | vmm::PTE_GLOBAL,
         ) {
             pmm::free_frame(frame);
+            rollback_growth(virtual_base, mapped);
             crate::error!("heap growth failed: {}", error);
             return false;
         }
+        mapped += 1;
     }
     let block = virtual_base as *mut Block;
     (*block).size = GROW_SIZE;
@@ -114,26 +161,17 @@ unsafe fn allocate(heap: &mut Heap, size: usize, align: usize) -> *mut u8 {
     let align = align.max(16);
     let needed = align_up(size + align + HEADER_SIZE + 8, 16);
     let mut block = heap.head;
-    while !block.is_null() {
-        if (*block).free && (*block).size >= needed {
+    loop {
+        while !block.is_null() && (!(*block).free || (*block).size < needed) {
+            block = (*block).next;
+        }
+        if !block.is_null() {
             break;
         }
-        block = (*block).next;
-    }
-    if block.is_null() {
         if !grow(heap) {
             return ptr::null_mut();
         }
         block = heap.head;
-        while !block.is_null() {
-            if (*block).free && (*block).size >= needed {
-                break;
-            }
-            block = (*block).next;
-        }
-        if block.is_null() {
-            return ptr::null_mut();
-        }
     }
 
     if (*block).size - needed >= MIN_SPLIT {
@@ -243,6 +281,15 @@ pub fn self_test() -> bool {
         return false;
     }
     drop(large);
+    // A full 1 MiB allocation is larger than one growth chunk once headers and
+    // alignment are included; this proves chunks are coalesced and growth can
+    // be repeated for a single request.
+    let huge = alloc::vec![0x5Au8; 1024 * 1024];
+    if huge[0] != 0x5A || huge[huge.len() - 1] != 0x5A {
+        crate::error!("heap self-test: 1 MiB allocation corrupted");
+        return false;
+    }
+    drop(huge);
     let after = HEAP.lock().allocated_bytes;
     if after > before {
         crate::error!("heap self-test: leak detected ({} -> {})", before, after);

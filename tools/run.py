@@ -26,7 +26,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 IMAGE = ROOT / "build" / "aster.img"
+DATA_IMAGE = ROOT / "build" / "data.img"
 SERIAL_LOG = ROOT / "build" / "serial.log"
+
+
+def drive_args(include_data: bool = True) -> list[str]:
+    """QEMU drive arguments shared by the runner and every probe.
+
+    The data disk is optional: tests that need a deterministic volume use a
+    temporary copy instead of build/data.img.
+    """
+    args = ["-drive", f"file={IMAGE},format=raw,if=ide,index=0"]
+    if include_data and DATA_IMAGE.exists():
+        args += ["-drive", f"file={DATA_IMAGE},format=raw,if=ide,index=1"]
+    return args
 
 
 def find_qemu() -> str:
@@ -163,7 +176,7 @@ def main() -> None:
     if args.iso:
         cmd += ["-cdrom", args.iso, "-boot", "d"]
     else:
-        cmd += ["-drive", f"file={IMAGE},format=raw,if=ide,index=0"]
+        cmd += drive_args()
     if args.headless:
         cmd += [
             "-display", "none",

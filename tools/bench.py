@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from run import Qmp, find_ovmf, find_qemu, IMAGE  # noqa: E402
+from run import Qmp, drive_args, find_ovmf, find_qemu  # noqa: E402
 
 MARKERS = [
     ("BOOT-LOADER-START", "firmware handed control to Aster Boot"),
@@ -38,7 +38,7 @@ def main() -> None:
         "-drive", f"if=pflash,format=raw,readonly=on,file={find_ovmf()}",
         "-device", "VGA", "-rtc", "base=localtime", "-no-reboot",
         "-serial", f"file:{serial}", "-monitor", "none",
-        "-drive", f"file={IMAGE},format=raw,if=ide,index=0",
+        *drive_args(),
         "-display", "none", "-vnc", "127.0.0.1:8",
         "-qmp", f"tcp:127.0.0.1:{port},server=on,wait=off",
     ]

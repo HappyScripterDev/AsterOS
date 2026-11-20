@@ -54,7 +54,11 @@ fn parse_elf(bytes: &[u8]) -> Result<UserImage, &'static str> {
     if phentsize < 56 || phnum == 0 || phnum > 16 {
         return Err("unsupported program headers");
     }
-    if phoff + phentsize * phnum > bytes.len() {
+    let table_end = (phentsize as u64)
+        .checked_mul(phnum as u64)
+        .and_then(|size| (phoff as u64).checked_add(size))
+        .ok_or("program header table overflow")?;
+    if table_end > bytes.len() as u64 {
         return Err("program headers out of range");
     }
     let mut segments = alloc::vec::Vec::new();
@@ -68,29 +72,54 @@ fn parse_elf(bytes: &[u8]) -> Result<UserImage, &'static str> {
         let vaddr = rd64(bytes, ph + 16);
         let filesz = rd64(bytes, ph + 32);
         let memsz = rd64(bytes, ph + 40);
-        if filesz > memsz || offset + filesz > bytes.len() as u64 {
+        let end_of_file = offset
+            .checked_add(filesz)
+            .ok_or("ELF segment file range overflow")?;
+        if filesz > memsz || end_of_file > bytes.len() as u64 {
             return Err("invalid ELF segment sizes");
         }
         if vaddr & 0xFFF != 0 || memsz == 0 {
             return Err("ELF segment not page aligned");
         }
-        if vaddr < vmm::USER_BASE || vaddr + memsz > vmm::USER_BASE + 0x0000_0000_1000_0000 {
+        let end = vaddr
+            .checked_add(memsz)
+            .ok_or("ELF segment range overflow")?;
+        if vaddr < vmm::USER_BASE || end > vmm::USER_BASE + 0x0000_0000_1000_0000 {
             return Err("ELF segment outside the image window");
+        }
+        let writable = flags & PF_W != 0;
+        let executable = flags & PF_X != 0;
+        if writable && executable {
+            return Err("ELF segment is both writable and executable");
         }
         segments.push(Segment {
             vaddr,
             offset,
             filesz,
             memsz,
-            writable: flags & PF_W != 0,
-            executable: flags & PF_X != 0,
+            writable,
+            executable,
         });
     }
     if segments.is_empty() {
         return Err("ELF image has no loadable segments");
     }
-    if entry < vmm::USER_BASE || entry >= vmm::USER_TOP {
-        return Err("entry point outside user space");
+    for first in 0..segments.len() {
+        for second in first + 1..segments.len() {
+            let a = &segments[first];
+            let b = &segments[second];
+            let a_end = a.vaddr + a.memsz;
+            let b_end = b.vaddr + b.memsz;
+            if a.vaddr < b_end && b.vaddr < a_end {
+                return Err("overlapping ELF segments");
+            }
+        }
+    }
+    let entry_is_executable = segments.iter().any(|segment| {
+        segment.executable && entry >= segment.vaddr && entry < segment.vaddr + segment.memsz
+    });
+    if !entry_is_executable || entry < vmm::USER_BASE || entry >= vmm::USER_TOP {
+        return Err("entry point outside an executable segment");
     }
     Ok(UserImage { entry, segments })
 }
@@ -100,7 +129,7 @@ unsafe fn map_segment(pml4: u64, bytes: &[u8], segment: &Segment) -> Result<(), 
     for page in 0..pages {
         let frame = pmm::alloc_zeroed_frame().ok_or("out of physical memory")?;
         let virtual_address = segment.vaddr + page as u64 * vmm::PAGE_SIZE;
-        let mut flags = vmm::PTE_USER;
+        let mut flags = vmm::PTE_USER | vmm::PTE_OWNED;
         if segment.writable {
             flags |= vmm::PTE_WRITE;
         }
@@ -133,7 +162,7 @@ unsafe fn map_stack(pml4: u64) -> Result<u64, &'static str> {
             pml4,
             virtual_address,
             frame,
-            vmm::PTE_USER | vmm::PTE_WRITE | vmm::PTE_NX,
+            vmm::PTE_USER | vmm::PTE_WRITE | vmm::PTE_NX | vmm::PTE_OWNED,
         ) {
             pmm::free_frame(frame);
             return Err(error);
@@ -151,18 +180,29 @@ pub fn spawn_module(name: &str) -> Result<u64, &'static str> {
     let image = parse_elf(bytes)?;
     let pml4 = vmm::create_user_pml4().ok_or("out of memory for a page table")?;
 
-    unsafe {
-        for segment in &image.segments {
-            map_segment(pml4, bytes, segment)?;
+    let loaded = unsafe {
+        image
+            .segments
+            .iter()
+            .try_for_each(|segment| map_segment(pml4, bytes, segment))
+            .and_then(|()| map_stack(pml4))
+    };
+
+    match loaded {
+        Ok(stack_pointer) => Ok(unsafe {
+            sched::register_process(
+                name,
+                pml4,
+                image.entry,
+                stack_pointer,
+                vmm::USER_BASE + 0x1000_0000,
+            )
+        }),
+        Err(error) => {
+            // The address space is not reachable from any process yet; reclaim
+            // every page and table that was mapped before the failure.
+            vmm::destroy_user_pml4(pml4);
+            Err(error)
         }
-        let stack_pointer = map_stack(pml4)?;
-        let pid = sched::register_process(
-            name,
-            pml4,
-            image.entry,
-            stack_pointer,
-            vmm::USER_BASE + 0x1000_0000,
-        );
-        Ok(pid)
     }
 }

@@ -63,6 +63,7 @@ pub fn handle(frame: &mut InterruptFrame) {
         sys::MKDIR => mkdir_path(pml4, args[0]),
         sys::RTC => rtc_time(pml4, args[0]),
         sys::PROC_LIST => process_list(pml4, args[0], args[1] as usize),
+        sys::STORAGE_INFO => storage_info(pml4, args[0]),
         sys::SHUTDOWN => shutdown(),
         _ => error(errno::ENOSYS),
     };
@@ -183,15 +184,27 @@ fn read_path(pml4: u64, pointer: u64) -> Result<alloc::string::String, i64> {
     if pointer == 0 {
         return Err(errno::EINVAL);
     }
+    // Read one byte at a time so a path that ends at the last mapped byte of a
+    // page is still valid. A fixed-size copy would reject it.
     let mut buffer = [0u8; 256];
-    if vmm::copy_from_user(pml4, pointer, &mut buffer).is_err() {
-        return Err(errno::EINVAL);
+    let mut length = 0usize;
+    while length < buffer.len() {
+        if vmm::copy_from_user(
+            pml4,
+            pointer + length as u64,
+            &mut buffer[length..length + 1],
+        )
+        .is_err()
+        {
+            return Err(errno::EINVAL);
+        }
+        if buffer[length] == 0 {
+            return alloc::string::String::from_utf8(buffer[..length].to_vec())
+                .map_err(|_| errno::EINVAL);
+        }
+        length += 1;
     }
-    let length = buffer
-        .iter()
-        .position(|&byte| byte == 0)
-        .ok_or(errno::ENAMETOOLONG)?;
-    alloc::string::String::from_utf8(buffer[..length].to_vec()).map_err(|_| errno::EINVAL)
+    Err(errno::ENAMETOOLONG)
 }
 
 unsafe fn fd_slot(
@@ -443,6 +456,37 @@ fn process_list(pml4: u64, pointer: u64, maximum: usize) -> u64 {
         return error(errno::EINVAL);
     }
     count as u64
+}
+
+fn storage_info(pml4: u64, pointer: u64) -> u64 {
+    let info = match crate::storage::fat32::usage() {
+        Some(usage) => aster_abi::StorageInfo {
+            mounted: 1,
+            sector_bytes: 512,
+            cluster_bytes: usage.cluster_bytes,
+            reserved: 0,
+            total_bytes: usage.total_bytes,
+            free_bytes: usage.free_bytes,
+        },
+        None => aster_abi::StorageInfo {
+            mounted: 0,
+            sector_bytes: 512,
+            cluster_bytes: 0,
+            reserved: 0,
+            total_bytes: 0,
+            free_bytes: 0,
+        },
+    };
+    let bytes = unsafe {
+        core::slice::from_raw_parts(
+            &info as *const aster_abi::StorageInfo as *const u8,
+            core::mem::size_of::<aster_abi::StorageInfo>(),
+        )
+    };
+    if vmm::copy_to_user(pml4, pointer, bytes).is_err() {
+        return error(errno::EINVAL);
+    }
+    0
 }
 
 fn shutdown() -> u64 {

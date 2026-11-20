@@ -152,6 +152,12 @@ pub fn free_frame(address: u64) {
         return;
     }
     let mut state = STATE.lock();
+    // Only frames inside the managed RAM range may be returned. Device MMIO
+    // (for example a framebuffer or an AHCI BAR) is mapped into user or kernel
+    // space but was never allocated from the frame bitmap.
+    if frame >= state.total {
+        return;
+    }
     unsafe {
         if is_used(frame) {
             set_used(frame, false);

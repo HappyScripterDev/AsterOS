@@ -25,10 +25,11 @@ The loader passes `BootInfo` in `rdi` as a direct-map virtual address.
 4. GDT/TSS, IDT, PIC remap, PIT start, SSE enable,
 5. PMM -> VMM -> heap,
 6. heap self-test and memory self-tests,
-7. ramfs init + self-test,
-8. scheduler init (idle thread), PS/2 init,
-9. load `/DESK` as PID 1, `sched::start()` (never returns),
-10. idle thread halts with interrupts enabled; the timer wakes runnable
+7. storage init (PCI/AHCI, GPT, FAT32 mount + read/write self-test),
+8. ramfs init + self-test,
+9. scheduler init (idle thread), PS/2 init,
+10. load `/DESK` as PID 1, `sched::start()` (never returns),
+11. idle thread halts with interrupts enabled; the timer wakes runnable
     user threads.
 
 All boot failures call `halt_with_diagnostics` or `panic!`, which writes to
@@ -180,7 +181,8 @@ process's PML4 is destroyed when its last thread dies.
 
 Syscall entry/exit returns to the same address space and kernel stack. A user
 page fault terminates only the offender: the exception handler offers the fault
-to the scheduler, which logs pid/tid/RIP/CR2 and marks the thread dead.
+to the scheduler, which logs pid/tid/vector and terminates the offending
+process. Every ring-3 exception is contained, not only page faults.
 
 ## 9. Syscalls
 
@@ -192,10 +194,11 @@ Implemented calls and semantics are listed in
   write-only access and NX.
 - `READDIR` packs `DirEntry` records; the caller provides the entry count.
 - `EXIT` marks the thread dead and schedules away permanently.
+- `STORAGE_INFO` reports the persistent volume's mount state and capacity.
 - `SHUTDOWN` uses the QEMU ACPI poweroff ports; there is no ACPI driver yet.
 
 `SPAWN`, `WAIT`, IPC channel calls, and `SET_THEME` are reserved in the ABI but
-return `ENOSYS`. They are not advertised as working in the desktop.
+return `ENOSYS`. The full table is in `docs/architecture/SYSCALLS.md`. They are not advertised as working in the desktop.
 
 ## 10. Exceptions and diagnostics
 
@@ -216,3 +219,7 @@ not yet exposed to user space.
   lock; allocations from IRQ context are avoided by design.
 - No `SMEP`/`SMAP`/`UMIP` enablement yet, so the kernel could be tricked into
   executing user pages if a kernel pointer bug existed.
+- The FAT32 home uses 8.3 names, has no journal, and is world-writable. System
+  files stay on the volatile ramfs.
+- Process teardown is still tied to the next scheduler switch; there is no
+  zombie/wait model yet (M2).

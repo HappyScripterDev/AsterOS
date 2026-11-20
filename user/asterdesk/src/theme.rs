@@ -133,7 +133,7 @@ pub const DANGER: Color = Color::rgb(0xFF, 0x3B, 0x30);
 
 pub const INFO: Color = Color::rgb(0x00, 0x7A, 0xFF);
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 
 pub struct Theme {
     pub accent_index: usize,

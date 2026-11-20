@@ -191,6 +191,7 @@ pub mod sys {
     pub const SHUTDOWN: u64 = 28;
     pub const RTC: u64 = 29;
     pub const PROC_LIST: u64 = 30;
+    pub const STORAGE_INFO: u64 = 31;
 }
 
 /// Error codes returned in `rax` by system calls. Negative values are errors.
@@ -347,4 +348,17 @@ pub struct ProcessInfo {
     pub threads: u32,
     pub state: u32,
     pub name: [u8; 24],
+}
+
+/// Capacity of the persistent home volume. `mounted == 0` means the system
+/// booted without a data disk and is running on the in-memory root only.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct StorageInfo {
+    pub mounted: u32,
+    pub sector_bytes: u32,
+    pub cluster_bytes: u32,
+    pub reserved: u32,
+    pub total_bytes: u64,
+    pub free_bytes: u64,
 }

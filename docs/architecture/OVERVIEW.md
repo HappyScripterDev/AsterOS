@@ -49,7 +49,8 @@ Aster Boot (boot/, Rust, x86_64-unknown-uefi)
 Aster Kernel (kernel/, higher half)
   |  entry stub: cli, set RSP to the kernel .bss stack, call kernel_main
   |  serial logging -> boot contract validation -> GDT/TSS -> IDT -> PIC/PIT
-  |  -> PMM -> VMM -> heap -> ramfs -> scheduler -> PS/2 -> spawn desktop
+  |  -> PMM -> VMM -> heap -> AHCI/GPT/FAT32 -> ramfs -> scheduler -> PS/2
+  |  -> spawn desktop
   v
 Aster Desktop (user/asterdesk, ring 3, PID 1)
      framebuffer mapping + input + time + memory + filesystem syscalls
@@ -92,7 +93,8 @@ early boot. This is a documented constraint, not a general VMM feature.
 | Heap | `mm/heap.rs` | First-fit with coalescing over a mapped virtual region, `GlobalAlloc`. |
 | Scheduler | `sched.rs` | Threads, processes, round-robin, FXSAVE context switch, preemption, reaping. |
 | Syscalls | `syscall.rs` | `int 0x80` dispatch, pointer validation, errno returns. |
-| Filesystem | `fs.rs` | Volatile ramfs, inode table, paths, fd-facing operations. |
+| Storage | `storage/`, `drivers/ahci.rs` | GPT + FAT32 home volume over AHCI; see `docs/architecture/STORAGE.md`. |
+| Filesystem | `fs.rs` | VFS front-end: ramfs root, FAT32 mount at `/home/user`, inode dispatch, fd-facing operations. |
 | Input | `drivers/ps2.rs` | PS/2 keyboard/mouse, event queue. |
 | Clock | `arch/rtc.rs` | CMOS wall clock for the Calendar and top bar. |
 | Logging | `logging.rs` | Serial + 64 KiB ring buffer. |
@@ -143,22 +145,25 @@ the GOP framebuffer.
 - **Input**: the kernel delivers `InputEvent`s (ASCII + special keys + modifier
   bits, absolute pointer position). The shell routes events to overlays, then
   the focused window, then the dock/top bar.
-- **State**: theme and preferences are stored in `/home/user/settings.conf` on
-  the ramfs. They persist only for the lifetime of the running system (ramfs is
-  volatile).
+- **State**: preferences are stored in `/home/user/SETTINGS.CNF`. When the
+  data disk is present this is a FAT32 file on the persistent volume; without
+  it the same path falls back to the volatile ramfs.
 
 ## 8. Filesystem
 
-The VFS contract is currently implemented by ramfs:
+The root namespace is ramfs; `/home/user` is a FAT32 mount when the data disk
+is present. Both back-ends expose the same path and inode operations:
 
 - absolute path resolution, `.`/`..`, directories, files up to 4 MiB,
 - per-process file descriptor table (24 entries, 0-2 reserved for console),
 - `open/read/write/seek/readdir/stat/unlink/mkdir`,
 - seeded `/home/user`, `/etc`, `/system`, `/var/log`, `/apps`.
 
-There is no on-disk filesystem, journal, or persistence yet. The planned native
-filesystem (AFS) must implement the same semantics plus crash consistency and
-checksums; see `docs/architecture/SYSTEM_SERVICES.md`.
+The persistent volume is real FAT32 on a second QEMU disk. It supports create,
+read, write, mkdir, truncate and unlink, and survives reboots (verified by the
+host verifier in `tools/persistence_test.py`). It uses 8.3 names, has no
+journal, and is world-readable/writable single-user storage. Details and limits:
+`docs/architecture/STORAGE.md`.
 
 ## 9. Security boundaries (implemented)
 
@@ -179,8 +184,8 @@ logs, and a permission model beyond the single-user assumption. See
 
 - Single CPU; no APIC/IOAPIC, no SMP, no TSC deadline timer.
 - BIOS/legacy boot is not supported; UEFI only.
-- No PCI enumeration, no ACPI interpreter, no storage/network/USB/audio/GPU
-  drivers.
+- PCI configuration and AHCI work, but there is no full PCI bus inventory, no
+  ACPI interpreter, and no network/USB/audio/GPU drivers.
 - No demand paging, swapping, or copy-on-write; user memory is eagerly mapped.
 - No kernel preemption of arbitrary kernel threads.
 - User binaries must be x86_64 ELF with a fixed base; no dynamic linking.

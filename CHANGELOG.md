@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.0 - Core milestone (2026-11-20)
+
+- Added PCI configuration access and a polling AHCI driver for the q35 SATA
+  controller (IDENTIFY plus single-sector DMA reads and writes).
+- Added GPT parsing with header CRC validation and a separate 512 MiB data
+  disk (`build/data.img`, created once and preserved across builds).
+- Added a FAT32 driver: mount, lookup, read, write, create, mkdir, truncate,
+  recursive unlink, directory growth and both FAT copies.
+- Mounted the volume at `/home/user` through the existing VFS; the boot disk is
+  only ever read.
+- Settings > Storage now reports the real mount state, capacity and free space
+  through a new `STORAGE_INFO` syscall.
+- Preferences, Notes, Documents and user files persist across reboots; the
+  persistence test verifies the guest-written volume with the host FAT parser.
+- Hardened the kernel: all user exceptions are contained, PMM frame bounds are
+  checked, partial mappings roll back, the kernel heap coalesces growth chunks
+  and supports 1 MiB allocations, user copies require user/write permissions,
+  anonymous frames carry an ownership bit, and NX/WP are enabled.
+- Added missing-disk and corrupt-volume handling; both boot to the desktop.
+
 ## Unreleased - light macOS-inspired redesign
 
 - Replaced the dark/light theme system with a single light appearance. There

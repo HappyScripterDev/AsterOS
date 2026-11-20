@@ -16,6 +16,12 @@ pub const HEAP_BASE: u64 = 0xFFFF_9000_0000_0000;
 pub const USER_BASE: u64 = 0x0000_0000_0040_0000;
 pub const USER_STACK_TOP: u64 = USER_BASE + 0x0000_0000_4000_0000;
 pub const USER_TOP: u64 = USER_BASE + 0x0000_0000_8000_0000;
+/// Anonymous user allocations stop below the stack and its guard page.
+pub const USER_HEAP_LIMIT: u64 = USER_STACK_TOP - 0x0001_0000;
+/// A single `VM_ALLOC` is capped so a process cannot exhaust physical memory
+/// or overflow the address-space arithmetic in one call. The desktop maps its
+/// 48 MiB heap in one request, so the limit must stay above that.
+pub const MAX_USER_ALLOC: usize = 64 * 1024 * 1024;
 
 pub const PTE_PRESENT: u64 = 1 << 0;
 pub const PTE_WRITE: u64 = 1 << 1;
@@ -26,6 +32,10 @@ pub const PTE_ACCESSED: u64 = 1 << 5;
 pub const PTE_DIRTY: u64 = 1 << 6;
 pub const PTE_HUGE: u64 = 1 << 7;
 pub const PTE_GLOBAL: u64 = 1 << 8;
+/// Software bit: the frame behind this PTE was allocated by the kernel for
+/// this mapping and may be freed when the address space is destroyed. Device
+/// MMIO and shared mappings are deliberately not marked.
+pub const PTE_OWNED: u64 = 1 << 9;
 pub const PTE_NX: u64 = 1 << 63;
 
 pub const ADDRESS_MASK: u64 = 0x000F_FFFF_FFFF_F000;
@@ -225,7 +235,7 @@ pub fn destroy_user_pml4(pml4: u64) {
                     let pt = table_from_entry(pde);
                     for i1 in 0..512 {
                         let pte = *entry(pt, i1);
-                        if pte & PTE_PRESENT != 0 {
+                        if pte & PTE_PRESENT != 0 && pte & PTE_OWNED != 0 {
                             pmm::free_frame(pte & ADDRESS_MASK);
                         }
                     }
@@ -266,26 +276,112 @@ pub fn user_alloc(
     if length == 0 {
         return Err("zero-length allocation");
     }
+    if length > MAX_USER_ALLOC {
+        return Err("allocation exceeds the per-call limit");
+    }
     let pages = (length + PAGE_SIZE as usize - 1) / PAGE_SIZE as usize;
     let virtual_address = (*cursor + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
-    let end = virtual_address + pages as u64 * PAGE_SIZE;
-    if end > USER_TOP {
+    let bytes = (pages as u64)
+        .checked_mul(PAGE_SIZE)
+        .ok_or("allocation size overflow")?;
+    let end = virtual_address
+        .checked_add(bytes)
+        .ok_or("allocation address overflow")?;
+    if end > USER_HEAP_LIMIT {
         return Err("user address space exhausted");
     }
+    let mut mapped = 0usize;
     for index in 0..pages {
-        let frame = pmm::alloc_zeroed_frame().ok_or("out of physical memory")?;
+        let frame = match pmm::alloc_zeroed_frame() {
+            Some(frame) => frame,
+            None => {
+                release_user_pages(pml4, virtual_address, mapped);
+                return Err("out of physical memory");
+            }
+        };
         if let Err(error) = map_page(
             pml4,
             virtual_address + index as u64 * PAGE_SIZE,
             frame,
-            flags | PTE_USER,
+            flags | PTE_USER | PTE_OWNED,
         ) {
             pmm::free_frame(frame);
+            release_user_pages(pml4, virtual_address, mapped);
             return Err(error);
         }
+        mapped += 1;
     }
     *cursor = end;
     Ok(virtual_address)
+}
+
+/// Unmap and free `pages` frames starting at `start`. Used to roll back a
+/// partially completed allocation; the caller still owns the address space.
+fn release_user_pages(pml4: u64, start: u64, pages: usize) {
+    for index in 0..pages {
+        let address = start + index as u64 * PAGE_SIZE;
+        if let Some(physical) = translate(pml4, address) {
+            if unmap_page(pml4, address).is_ok() {
+                pmm::free_frame(physical);
+            }
+        }
+    }
+}
+
+/// Map a device MMIO window into the kernel address space and return its VA.
+/// The kernel's upper-half entries are shared with every process, so a device
+/// mapped here is reachable from ring 0 in all address spaces.
+pub fn map_kernel_mmio(physical_address: u64, length: usize) -> Result<u64, &'static str> {
+    if length == 0 {
+        return Err("empty MMIO window");
+    }
+    const MMIO_BASE: u64 = 0xFFFF_A000_0000_0000;
+    static MMIO_CURSOR: AtomicU64 = AtomicU64::new(MMIO_BASE);
+    let pages = (length + PAGE_SIZE as usize - 1) / PAGE_SIZE as usize;
+    let bytes = (pages as u64) * PAGE_SIZE;
+    let virtual_address = MMIO_CURSOR.fetch_add(bytes, Ordering::Relaxed);
+    for page in 0..pages {
+        map_page(
+            kernel_pml4(),
+            virtual_address + page as u64 * PAGE_SIZE,
+            physical_address + page as u64 * PAGE_SIZE,
+            PTE_WRITE | PTE_NX | PTE_GLOBAL,
+        )?;
+    }
+    Ok(virtual_address)
+}
+
+/// Translate a user virtual address and verify that the leaf is user-accessible
+/// (and writable, when requested). Rejects huge mappings and kernel addresses.
+pub fn user_leaf(pml4: u64, virtual_address: u64, write: bool) -> Option<u64> {
+    if virtual_address < USER_BASE || virtual_address >= USER_TOP {
+        return None;
+    }
+    unsafe {
+        let pml4e = *entry(pml4, ((virtual_address >> 39) & 0x1FF) as usize);
+        if pml4e & PTE_PRESENT == 0 || pml4e & PTE_USER == 0 {
+            return None;
+        }
+        let pdpt = table_from_entry(pml4e);
+        let pdpte = *entry(pdpt, ((virtual_address >> 30) & 0x1FF) as usize);
+        if pdpte & PTE_PRESENT == 0 || pdpte & PTE_USER == 0 || pdpte & PTE_HUGE != 0 {
+            return None;
+        }
+        let pd = table_from_entry(pdpte);
+        let pde = *entry(pd, ((virtual_address >> 21) & 0x1FF) as usize);
+        if pde & PTE_PRESENT == 0 || pde & PTE_USER == 0 || pde & PTE_HUGE != 0 {
+            return None;
+        }
+        let pt = table_from_entry(pde);
+        let pte = *entry(pt, ((virtual_address >> 12) & 0x1FF) as usize);
+        if pte & PTE_PRESENT == 0 || pte & PTE_USER == 0 {
+            return None;
+        }
+        if write && pte & PTE_WRITE == 0 {
+            return None;
+        }
+        Some((pte & ADDRESS_MASK) + (virtual_address & 0xFFF))
+    }
 }
 
 pub fn copy_from_user(pml4: u64, source: u64, destination: &mut [u8]) -> Result<(), &'static str> {
@@ -295,7 +391,7 @@ pub fn copy_from_user(pml4: u64, source: u64, destination: &mut [u8]) -> Result<
         if virtual_address >= USER_TOP {
             return Err("user pointer outside user space");
         }
-        let physical = translate(pml4, virtual_address).ok_or("user pointer not mapped")?;
+        let physical = user_leaf(pml4, virtual_address, false).ok_or("user pointer not mapped")?;
         let page_offset = (virtual_address & 0xFFF) as usize;
         let chunk = (PAGE_SIZE as usize - page_offset).min(destination.len() - offset);
         unsafe {
@@ -317,7 +413,7 @@ pub fn copy_to_user(pml4: u64, destination: u64, source: &[u8]) -> Result<(), &'
         if virtual_address >= USER_TOP {
             return Err("user pointer outside user space");
         }
-        let physical = translate(pml4, virtual_address).ok_or("user pointer not mapped")?;
+        let physical = user_leaf(pml4, virtual_address, true).ok_or("user pointer not writable")?;
         let page_offset = (virtual_address & 0xFFF) as usize;
         let chunk = (PAGE_SIZE as usize - page_offset).min(source.len() - offset);
         unsafe {
@@ -333,13 +429,18 @@ pub fn copy_to_user(pml4: u64, destination: u64, source: &[u8]) -> Result<(), &'
 }
 
 pub fn validate_user_range(pml4: u64, address: u64, length: usize) -> bool {
-    let mut offset = 0u64;
-    while offset < length as u64 {
-        let virtual_address = address + offset;
-        if virtual_address >= USER_TOP || translate(pml4, virtual_address).is_none() {
+    let Some(end) = address.checked_add(length as u64) else {
+        return false;
+    };
+    if address < USER_BASE || end > USER_TOP {
+        return false;
+    }
+    let mut page = address & !0xFFF;
+    while page < end {
+        if user_leaf(pml4, page, false).is_none() {
             return false;
         }
-        offset += PAGE_SIZE;
+        page += PAGE_SIZE;
     }
     true
 }

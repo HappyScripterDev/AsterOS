@@ -10,7 +10,7 @@ ring-3 desktop environment with a light, macOS-inspired software compositor.
 
 ![Aster Desktop](docs/screenshots/desktop.png)
 
-## Status: developer preview
+## Status: 0.2.0 core milestone
 
 This repository contains a working, bootable system on QEMU (UEFI + GPT/FAT32
 disk image). The current milestone is a **single-CPU developer preview**:
@@ -20,9 +20,10 @@ disk image). The current milestone is a **single-CPU developer preview**:
 | Boot | Aster Boot (own UEFI loader), GPT + FAT32 ESP, ELF kernel loading, custom page tables, `ExitBootServices`, higher-half handoff |
 | Kernel | GDT/TSS, IDT, 256 vectors, exceptions, PIC/PIT at 1 kHz, 4-level paging, bitmap frame allocator, kernel heap (`alloc`), preemptive scheduler, ring-3 processes, syscalls via `int 0x80` |
 | Memory | 4 KiB frames, 32 GiB addressable bitmap, per-process PML4, NX/W^X user mappings, heap self-tests, user copy validation |
-| Drivers | COM1 serial, UEFI GOP framebuffer, PS/2 keyboard + mouse (IRQ driven), PIT |
+| Drivers | COM1 serial, UEFI GOP framebuffer, PS/2 keyboard + mouse (IRQ driven), PIT, PCI config, AHCI (q35) |
 | Filesystem | In-memory ramfs with paths, directories, files, file descriptors, `readdir`, `stat`, `unlink`, `mkdir` |
 | Desktop | Aster Desktop in ring 3: light menu bar, Spotlight launcher, dock with generated app icons and magnification, macOS-style window manager (traffic lights, drag, resize, maximize, snap, animations), Control Centre, notifications, virtual desktops |
+| Storage | Separate GPT/FAT32 data disk over AHCI; `/home/user` is persistent; Settings reports real capacity; boot disk is read-only to the kernel |
 | Apps | Terminal (real shell + ramfs), Files, Settings, Calculator, Monitor, Text, Notes, Calendar, Wallpapers |
 | Tests | Image verifier, kernel self-tests, ramfs self-test, QEMU boot smoke test, scripted UI/pointer tests |
 
@@ -78,6 +79,14 @@ filesystem syscalls; it contains no UI code.
   `Ctrl+Tab` cycle, `Ctrl+Left/Right` virtual desktops.
 
 ### Design
+
+![Persistence after reboot](docs/screenshots/persistence.png)
+
+The home directory is a real FAT32 volume on a second QEMU disk. Files,
+notes and preferences survive a reboot; `tools/persistence_test.py` writes in
+the guest, verifies the volume with an independent host parser, reboots, and
+reads the data back. The boot image is never written by the kernel. The volume
+uses 8.3 names and has no journal yet, and Settings states both limits.
 
 The desktop is light-only by product decision and follows macOS interaction
 patterns without copying Apple code or artwork: a translucent menu bar, a
@@ -135,11 +144,11 @@ Details: [docs/architecture/OVERVIEW.md](docs/architecture/OVERVIEW.md),
 | OVMF firmware to Aster Boot | 1.42 s |
 | Aster Boot + kernel handoff | 1.62 s |
 | Kernel initialised | 1.64 s |
-| Desktop ready | 4.83 s |
-| First compositor frame | 4.92 s |
+| Desktop ready | 4.54 s |
+| First compositor frame | 4.69 s |
 | Frame time (1280x800 software, idle) | ~52-60 ms |
 | Frame time with several windows open | ~80 ms |
-| Memory free after desktop init | 404 MiB of 510 MiB |
+| Memory free after desktop init | 398 MiB of 510 MiB |
 
 Method and caveats: [docs/benchmarks/2026-11-20.md](docs/benchmarks/2026-11-20.md).
 These numbers are for QEMU's software CPU emulation and are not comparable to

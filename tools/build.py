@@ -50,7 +50,7 @@ def find_cargo() -> str:
 
 CARGO = find_cargo()
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from image import build_image, verify_image  # noqa: E402
+from image import build_data_image, build_image, verify_image  # noqa: E402
 
 
 def run(cmd: list[str], **kwargs) -> None:
@@ -78,7 +78,7 @@ def artifact(package: str, target: str, name: str) -> Path:
     return path
 
 
-def build(clean: bool = False, modules: bool = True, desktop: bool = True) -> None:
+def build(clean: bool = False, modules: bool = True, desktop: bool = True, fresh_data: bool = False) -> None:
     start = time.time()
     BUILD.mkdir(exist_ok=True)
     if clean:
@@ -127,12 +127,43 @@ def build(clean: bool = False, modules: bool = True, desktop: bool = True) -> No
             print(f"  ERROR: {p}")
         sys.exit("error: disk image verification failed")
     print(f"  image: {img} ({img.stat().st_size // (1024 * 1024)} MiB)")
+
+    # The data volume is user state, not build output. Create it once and keep
+    # it across builds unless the caller explicitly asks for a fresh one.
+    data = BUILD / "data.img"
+    if fresh_data or not data.exists():
+        # First-boot contents. They are written once: later builds keep the
+        # volume so user edits survive.
+        seeds = {
+            "/WELCOME.TXT": (
+                b"Welcome to Aster OS.\n\n"
+                b"This home directory lives on the persistent data volume.\n"
+                b"Files here survive a reboot.\n"
+            ),
+            "/SETTINGS.CNF": (
+                b"theme=light\naccent=blue\nanimations=1.00\n"
+                b"wallpaper=0\nreduce_motion=0\nbrightness=1.00\n"
+            ),
+            "/NOTES/IDEAS.TXT": (
+                b"Ideas\n-----\n"
+                b"- Native compositor with real window management\n"
+                b"- Persistent home volume\n"
+                b"- Process isolation and IPC\n"
+            ),
+            "/DOCS/README.TXT": b"Documents saved here persist across reboots.\n",
+        }
+        build_data_image(str(data), seeds)
+        print(f"  data image: {data} ({data.stat().st_size // (1024 * 1024)} MiB, fresh)")
+    else:
+        print(f"  data image: {data} (kept)")
+
     print(f"build finished in {time.time() - start:.1f}s")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build Aster OS")
     parser.add_argument("--clean", action="store_true", help="remove target/ first")
+    parser.add_argument("--fresh-data", action="store_true", help="recreate build/data.img")
     parser.add_argument("--boot-only", action="store_true", help="only build the UEFI bootloader")
     args = parser.parse_args()
     if args.boot_only:
@@ -143,7 +174,7 @@ def main() -> None:
         build_image(str(img), files)
         print(f"boot-only image: {img}")
         return
-    build(clean=args.clean)
+    build(clean=args.clean, fresh_data=args.fresh_data)
 
 
 if __name__ == "__main__":

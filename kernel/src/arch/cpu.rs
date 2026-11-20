@@ -74,15 +74,30 @@ pub fn read_cr4() -> u64 {
 
 /// Enable SSE so user space can use floating point. The kernel itself is
 /// compiled without FP; per-thread FXSAVE state is handled by the scheduler.
+/// Also enables NX and write-protect so the W^X mappings mean something.
 pub unsafe fn init_fpu() {
     let cr0 = read_cr0();
-    // Clear EM (bit 2) and TS (bit 3); set MP (bit 1) and NE (bit 5).
-    let cr0 = (cr0 & !((1 << 2) | (1 << 3))) | (1 << 1) | (1 << 5);
+    // Clear EM (bit 2) and TS (bit 3); set MP (bit 1), NE (bit 5) and WP
+    // (bit 16) so ring 0 cannot silently write read-only pages.
+    let cr0 = (cr0 & !((1 << 2) | (1 << 3))) | (1 << 1) | (1 << 5) | (1 << 16);
     asm!("mov cr0, {}", in(reg) cr0, options(nomem, nostack, preserves_flags));
     let cr4 = read_cr4();
     // OSFXSR | OSXMMEXCPT
     let cr4 = cr4 | (1 << 9) | (1 << 10);
     asm!("mov cr4, {}", in(reg) cr4, options(nomem, nostack, preserves_flags));
+
+    // IA32_EFER.NXE is required for the NX bits installed by the loader.
+    const IA32_EFER: u32 = 0xC000_0080;
+    let mut low: u32;
+    let mut high: u32;
+    asm!("rdmsr", in("ecx") IA32_EFER, out("eax") low, out("edx") high, options(nomem, nostack));
+    let mut efer = ((high as u64) << 32) | low as u64;
+    if efer & (1 << 11) == 0 {
+        efer |= 1 << 11;
+        low = efer as u32;
+        high = (efer >> 32) as u32;
+        asm!("wrmsr", in("ecx") IA32_EFER, in("eax") low, in("edx") high, options(nomem, nostack));
+    }
 }
 
 /// Read the CPU vendor string and maximum basic leaf. Used in boot

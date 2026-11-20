@@ -25,10 +25,14 @@ SECTORS_PER_CLUSTER = 8
 RESERVED_SECTORS = 32
 NUM_FATS = 2
 VOLUME_LABEL = b"ASTER OS   "
+DATA_VOLUME_LABEL = b"ASTERDATA  "
 
 ESP_TYPE_GUID = "C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
+DATA_TYPE_GUID = "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7"
 DISK_GUID = "41535445-5220-4F53-8000-000000000001"
 PART_GUID = "41535445-5220-4F53-8000-000000000002"
+DATA_DISK_GUID = "41535445-5220-4F53-8000-000000000010"
+DATA_PART_GUID = "41535445-5220-4F53-8000-000000000011"
 
 
 def guid_bytes(text: str) -> bytes:
@@ -106,25 +110,34 @@ class FatLayout:
     clusters: int
 
     @staticmethod
-    def compute(total_sectors: int) -> "FatLayout":
+    def compute(total_sectors: int, spc: int = SECTORS_PER_CLUSTER) -> "FatLayout":
         fat_sectors = 1
         for _ in range(8):
             data = total_sectors - RESERVED_SECTORS - NUM_FATS * fat_sectors
-            clusters = data // SECTORS_PER_CLUSTER
+            clusters = data // spc
             need = ((clusters + 2) * 4 + SECTOR - 1) // SECTOR
             if need == fat_sectors:
                 break
             fat_sectors = need
         data = total_sectors - RESERVED_SECTORS - NUM_FATS * fat_sectors
-        clusters = data // SECTORS_PER_CLUSTER
+        clusters = data // spc
         return FatLayout(total_sectors, fat_sectors, clusters)
 
 
 class Fat32Writer:
-    def __init__(self, f, part_offset: int, total_sectors: int):
+    def __init__(
+        self,
+        f,
+        part_offset: int,
+        total_sectors: int,
+        spc: int = SECTORS_PER_CLUSTER,
+        label: bytes = VOLUME_LABEL,
+    ):
         self.f = f
         self.off = part_offset
-        self.layout = FatLayout.compute(total_sectors)
+        self.spc = spc
+        self.label = label
+        self.layout = FatLayout.compute(total_sectors, spc)
         assert self.layout.clusters >= 65525, "volume too small for FAT32"
         self.fat = [0] * (self.layout.clusters + 2)
         self.fat[0] = 0x0FFFFFF8
@@ -144,7 +157,7 @@ class Fat32Writer:
 
     def cluster_offset(self, cluster: int) -> int:
         first_data = RESERVED_SECTORS + NUM_FATS * self.layout.fat_sectors
-        return self.off + (first_data + (cluster - 2) * SECTORS_PER_CLUSTER) * SECTOR
+        return self.off + (first_data + (cluster - 2) * self.spc) * SECTOR
 
     def write_at(self, offset: int, data: bytes) -> None:
         self.f.seek(offset)
@@ -155,7 +168,7 @@ class Fat32Writer:
         bs[0:3] = b"\xEB\x58\x90"
         bs[3:11] = b"ASTEROS "
         struct.pack_into("<H", bs, 11, SECTOR)
-        bs[13] = SECTORS_PER_CLUSTER
+        bs[13] = self.spc
         struct.pack_into("<H", bs, 14, RESERVED_SECTORS)
         bs[16] = NUM_FATS
         struct.pack_into("<H", bs, 17, 0)
@@ -175,7 +188,7 @@ class Fat32Writer:
         bs[64] = 0x80
         bs[66] = 0x29
         struct.pack_into("<I", bs, 67, 0x41535445)
-        bs[71:82] = VOLUME_LABEL
+        bs[71:82] = self.label.ljust(11)[:11]
         bs[82:90] = b"FAT32   "
         bs[510:512] = b"\x55\xAA"
         self.write_at(self.off, bytes(bs))
@@ -206,7 +219,7 @@ class Fat32Writer:
             size = 0 if child.is_dir else child.size
             entries.append(dir_entry_83(child.name, attr, child.cluster, size))
         assert len(entries) <= 128, f"directory {node.name} has too many entries"
-        blob = b"".join(entries).ljust(SECTORS_PER_CLUSTER * SECTOR, b"\x00")
+        blob = b"".join(entries).ljust(self.spc * SECTOR, b"\x00")
         self.write_at(self.cluster_offset(node.cluster), blob)
 
 
@@ -217,8 +230,8 @@ def alloc_tree(fat: Fat32Writer, node: Node) -> None:
             alloc_tree(fat, child)
     else:
         node.size = len(node.data)
-        clusters = max(1, (len(node.data) + SECTORS_PER_CLUSTER * SECTOR - 1)
-                       // (SECTORS_PER_CLUSTER * SECTOR))
+        clusters = max(1, (len(node.data) + fat.spc * SECTOR - 1)
+                       // (fat.spc * SECTOR))
         node.cluster = fat.alloc(clusters)
 
 
@@ -232,8 +245,19 @@ def emit_tree(fat: Fat32Writer, node: Node, parent_cluster: int) -> None:
         fat.write_at(fat.cluster_offset(node.cluster), node.data)
 
 
-def build_image(path: str, files: dict[str, bytes], image_bytes: int = IMAGE_BYTES) -> None:
-    """Create a GPT disk image containing one FAT32 ESP with `files`."""
+def build_image(
+    path: str,
+    files: dict[str, bytes],
+    image_bytes: int = IMAGE_BYTES,
+    *,
+    sectors_per_cluster: int = SECTORS_PER_CLUSTER,
+    volume_label: bytes = VOLUME_LABEL,
+    partition_type_guid: str = ESP_TYPE_GUID,
+    partition_guid: str = PART_GUID,
+    disk_guid: str = DISK_GUID,
+    partition_name: str = "Aster ESP",
+) -> None:
+    """Create a GPT disk image containing one FAT32 partition with `files`."""
     total_sectors = image_bytes // SECTOR
     part_sectors = total_sectors - PART_START_LBA - 34
     if total_sectors < 4096:
@@ -242,7 +266,13 @@ def build_image(path: str, files: dict[str, bytes], image_bytes: int = IMAGE_BYT
     # Build FAT partition in place.
     with open(path, "wb") as f:
         f.truncate(total_sectors * SECTOR)
-        fat = Fat32Writer(f, PART_START_LBA * SECTOR, part_sectors)
+        fat = Fat32Writer(
+            f,
+            PART_START_LBA * SECTOR,
+            part_sectors,
+            spc=sectors_per_cluster,
+            label=volume_label,
+        )
         fat.format_boot_sector()
 
         targets = {("/" + k.lstrip("/")): v for k, v in files.items()}
@@ -271,12 +301,12 @@ def build_image(path: str, files: dict[str, bytes], image_bytes: int = IMAGE_BYT
         # Primary GPT
         entries = bytearray(128 * 128)
         entry = bytearray(128)
-        entry[0:16] = guid_bytes(ESP_TYPE_GUID)
-        entry[16:32] = guid_bytes(PART_GUID)
+        entry[0:16] = guid_bytes(partition_type_guid)
+        entry[16:32] = guid_bytes(partition_guid)
         struct.pack_into("<Q", entry, 32, PART_START_LBA)
         struct.pack_into("<Q", entry, 40, PART_START_LBA + part_sectors - 1)
         struct.pack_into("<Q", entry, 48, 0)
-        name = "Aster ESP".encode("utf-16-le")[:72]
+        name = partition_name.encode("utf-16-le")[:72]
         entry[56:56 + len(name)] = name
         entries[0:128] = entry
 
@@ -290,7 +320,7 @@ def build_image(path: str, files: dict[str, bytes], image_bytes: int = IMAGE_BYT
         struct.pack_into("<Q", header, 32, total_sectors - 1)
         struct.pack_into("<Q", header, 40, 34)
         struct.pack_into("<Q", header, 48, total_sectors - 34)
-        header[56:72] = guid_bytes(DISK_GUID)
+        header[56:72] = guid_bytes(disk_guid)
         struct.pack_into("<Q", header, 72, 2)
         struct.pack_into("<I", header, 80, 128)
         struct.pack_into("<I", header, 84, 128)
@@ -317,6 +347,24 @@ def build_image(path: str, files: dict[str, bytes], image_bytes: int = IMAGE_BYT
         struct.pack_into("<I", backup, 16, crc32(bytes(backup_check)))
         f.seek((total_sectors - 1) * SECTOR)
         f.write(backup)
+
+
+def build_data_image(path: str, files: dict[str, bytes] | None = None) -> None:
+    """Create the 512 MiB persistent data volume (GPT + one FAT32 partition).
+
+    It is deliberately a separate disk from the boot image: the kernel never
+    writes the ESP, and rebuilding Aster cannot destroy user data.
+    """
+    build_image(
+        path,
+        files or {},
+        sectors_per_cluster=8,
+        volume_label=DATA_VOLUME_LABEL,
+        partition_type_guid=DATA_TYPE_GUID,
+        partition_guid=DATA_PART_GUID,
+        disk_guid=DATA_DISK_GUID,
+        partition_name="Aster Data",
+    )
 
 
 def verify_image(path: str, expected: dict[str, bytes]) -> list[str]:

@@ -9,7 +9,37 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
+use crate::storage::fat32;
 use crate::sync::IrqLock;
+
+/// Top byte of an inode selects the mounted filesystem. 0 is ramfs, 1 is the
+/// persistent FAT32 home. Native inode numbers are preserved below it.
+const FAT_TAG: u64 = fat32::MOUNT_TAG;
+
+fn fat_relative(path: &str) -> Option<&str> {
+    if !fat32::mounted() {
+        return None;
+    }
+    if path == "/home/user" {
+        return Some("/");
+    }
+    // Keep the leading slash: the FAT layer resolves absolute paths such as
+    // "/NOTES/IDEAS.TXT" relative to the mount root.
+    path.strip_prefix("/home/user")
+        .filter(|rest| rest.starts_with('/'))
+}
+
+fn fat_native(inode: u64) -> Option<u64> {
+    if inode & FAT_TAG != 0 {
+        Some(inode & !FAT_TAG)
+    } else {
+        None
+    }
+}
+
+fn tagged(native: u64) -> u64 {
+    FAT_TAG | native
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum NodeKind {
@@ -182,27 +212,29 @@ pub fn init() {
     });
     fs.next_id = 2;
 
-    let dirs = [
+    let mut dirs = alloc::vec![
         "/home",
         "/home/user",
-        "/home/user/Documents",
-        "/home/user/notes",
         "/etc",
         "/system",
         "/var",
         "/var/log",
         "/apps",
     ];
+    if !fat32::mounted() {
+        dirs.push("/home/user/Documents");
+        dirs.push("/home/user/notes");
+    }
     for dir in dirs {
         let (parent, name) = fs.resolve_parent(dir).expect("seed directory");
         fs.create(parent, name, NodeKind::Dir, Vec::new())
             .expect("seed directory");
     }
 
-    let files: [(&str, &str); 7] = [
+    let mut files: Vec<(&str, &str)> = alloc::vec![
         (
             "/README.md",
-            "# Aster OS\n\nAn independent x86_64 operating system.\n\nThis build boots via UEFI, runs a higher-half kernel with preemptive\nthreads, ring-3 user space, PS/2 input and a software compositor.\n\nThe filesystem is an in-memory ramfs. Data is lost on shutdown; the\non-disk AFS is not implemented yet.\n\nTry the Terminal: type `help`.\n",
+            "# Aster OS\n\nAn independent x86_64 operating system.\n\nThis build boots via UEFI, runs a higher-half kernel with preemptive\nthreads, ring-3 user space, PS/2 input and a software compositor.\n\nUser files live on a persistent FAT32 volume when a data disk is present;\nsystem files are still served from the in-memory ramfs.\n\nTry the Terminal: type `help`.\n",
         ),
         (
             "/etc/motd",
@@ -210,25 +242,27 @@ pub fn init() {
         ),
         (
             "/system/version",
-            "Aster OS 0.1.0 (developer preview)\nkernel: aster 0.1.0\nabi: 1\n",
-        ),
-        (
-            "/home/user/welcome.txt",
-            "Hello.\n\nThis is your home directory. Documents, notes and settings live here.\nUse the Files app to browse, or the Terminal to explore the system.\n",
-        ),
-        (
-            "/home/user/notes/ideas.txt",
-            "Ideas\n-----\n- Native compositor with real window management\n- Persistent AFS with checksums\n- More applications built on the shared UI toolkit\n",
-        ),
-        (
-            "/home/user/settings.conf",
-            "theme=dark\naccent=blue\nanimations=1.0\nwallpaper=aurora\nreduce_motion=0\n",
+            "Aster OS 0.2.0 (core milestone)\nkernel: aster 0.2.0\nabi: 1\n",
         ),
         (
             "/var/log/boot.log",
             "Aster OS boot log\nSee the serial console for the full kernel log.\n",
         ),
     ];
+    if !fat32::mounted() {
+        files.push((
+            "/home/user/welcome.txt",
+            "Hello.\n\nThis is your home directory. Documents, notes and settings live here.\nUse the Files app to browse, or the Terminal to explore the system.\n",
+        ));
+        files.push((
+            "/home/user/notes/ideas.txt",
+            "Ideas\n-----\n- Native compositor with real window management\n- Persistent AFS with checksums\n- More applications built on the shared UI toolkit\n",
+        ));
+        files.push((
+            "/home/user/settings.conf",
+            "theme=light\naccent=blue\nanimations=1.0\nwallpaper=0\nreduce_motion=0\nbrightness=1.0\n",
+        ));
+    }
 
     for (path, content) in files {
         let (parent, name) = fs.resolve_parent(path).expect("seed file");
@@ -247,6 +281,9 @@ fn errno_value(code: i64) -> i64 {
 }
 
 pub fn open(path: &str, flags: u32) -> Result<u64, i64> {
+    if let Some(relative) = fat_relative(path) {
+        return fat32::open(relative, flags).map(tagged);
+    }
     let mut fs = FS.lock();
     match fs.resolve(path) {
         Ok(id) => {
@@ -270,10 +307,22 @@ pub fn open(path: &str, flags: u32) -> Result<u64, i64> {
 }
 
 pub fn node_kind(id: u64) -> Option<NodeKind> {
+    if let Some(native) = fat_native(id) {
+        return fat32::stat(native).ok().map(|stat| {
+            if stat.is_dir != 0 {
+                NodeKind::Dir
+            } else {
+                NodeKind::File
+            }
+        });
+    }
     FS.lock().node(id).map(|node| node.kind)
 }
 
 pub fn read(id: u64, offset: u64, length: usize) -> Result<Vec<u8>, i64> {
+    if let Some(native) = fat_native(id) {
+        return fat32::read(native, offset, length);
+    }
     let fs = FS.lock();
     let node = fs.node(id).ok_or(crate::syscall::errno::ENOENT)?;
     if node.kind == NodeKind::Dir {
@@ -288,6 +337,9 @@ pub fn read(id: u64, offset: u64, length: usize) -> Result<Vec<u8>, i64> {
 }
 
 pub fn write(id: u64, offset: u64, data: &[u8]) -> Result<usize, i64> {
+    if let Some(native) = fat_native(id) {
+        return fat32::write(native, offset, data);
+    }
     let mut fs = FS.lock();
     let node = fs.node_mut(id).ok_or(crate::syscall::errno::ENOENT)?;
     if node.kind == NodeKind::Dir {
@@ -310,6 +362,9 @@ pub fn write(id: u64, offset: u64, data: &[u8]) -> Result<usize, i64> {
 }
 
 pub fn truncate(id: u64) -> Result<(), i64> {
+    if let Some(native) = fat_native(id) {
+        return fat32::truncate(native);
+    }
     let mut fs = FS.lock();
     let node = fs.node_mut(id).ok_or(crate::syscall::errno::ENOENT)?;
     if node.kind != NodeKind::File {
@@ -320,11 +375,20 @@ pub fn truncate(id: u64) -> Result<(), i64> {
 }
 
 pub fn size(id: u64) -> Result<u64, i64> {
+    if let Some(native) = fat_native(id) {
+        return fat32::size(native);
+    }
     let fs = FS.lock();
     Ok(fs.node(id).ok_or(crate::syscall::errno::ENOENT)?.data.len() as u64)
 }
 
 pub fn stat_path(path: &str) -> Result<aster_abi::FileStat, i64> {
+    if let Some(relative) = fat_relative(path) {
+        let native = fat32::lookup(relative)?;
+        let mut stat = fat32::stat(native)?;
+        stat.inode = tagged(native);
+        return Ok(stat);
+    }
     let fs = FS.lock();
     let id = fs.resolve(path)?;
     let node = fs.node(id).ok_or(crate::syscall::errno::ENOENT)?;
@@ -337,6 +401,11 @@ pub fn stat_path(path: &str) -> Result<aster_abi::FileStat, i64> {
 }
 
 pub fn stat_inode(id: u64) -> Result<aster_abi::FileStat, i64> {
+    if let Some(native) = fat_native(id) {
+        let mut stat = fat32::stat(native)?;
+        stat.inode = id;
+        return Ok(stat);
+    }
     let fs = FS.lock();
     let node = fs.node(id).ok_or(crate::syscall::errno::ENOENT)?;
     Ok(aster_abi::FileStat {
@@ -355,6 +424,21 @@ pub struct DirItem {
 }
 
 pub fn list(id: u64, offset: usize, maximum: usize) -> Result<Vec<DirItem>, i64> {
+    if let Some(native) = fat_native(id) {
+        let items = fat32::list(native, offset, maximum)?;
+        return Ok(items
+            .into_iter()
+            .map(|item| DirItem {
+                inode: tagged(item.inode),
+                kind: match item.kind {
+                    fat32::NodeKind::Dir => NodeKind::Dir,
+                    fat32::NodeKind::File => NodeKind::File,
+                },
+                name: item.name,
+                size: item.size,
+            })
+            .collect());
+    }
     let fs = FS.lock();
     let node = fs.node(id).ok_or(crate::syscall::errno::ENOENT)?;
     if node.kind != NodeKind::Dir {
@@ -375,6 +459,9 @@ pub fn list(id: u64, offset: usize, maximum: usize) -> Result<Vec<DirItem>, i64>
 }
 
 pub fn mkdir(path: &str) -> Result<u64, i64> {
+    if let Some(relative) = fat_relative(path) {
+        return fat32::mkdir(relative).map(tagged);
+    }
     let mut fs = FS.lock();
     if let Ok(existing) = fs.resolve(path) {
         let _ = existing;
@@ -385,6 +472,9 @@ pub fn mkdir(path: &str) -> Result<u64, i64> {
 }
 
 pub fn unlink(path: &str) -> Result<(), i64> {
+    if let Some(relative) = fat_relative(path) {
+        return fat32::unlink(relative);
+    }
     let mut fs = FS.lock();
     let id = fs.resolve(path)?;
     if id == fs.root() {
@@ -395,6 +485,24 @@ pub fn unlink(path: &str) -> Result<(), i64> {
 }
 
 pub fn read_whole(path: &str) -> Option<Vec<u8>> {
+    if let Some(relative) = fat_relative(path) {
+        let native = fat32::lookup(relative).ok()?;
+        let size = fat32::size(native).ok()?;
+        if size > 256 * 1024 {
+            return None;
+        }
+        let mut data = Vec::with_capacity(size as usize);
+        let mut offset = 0u64;
+        while offset < size {
+            let chunk = fat32::read(native, offset, 64 * 1024).ok()?;
+            if chunk.is_empty() {
+                break;
+            }
+            offset += chunk.len() as u64;
+            data.extend_from_slice(&chunk);
+        }
+        return Some(data);
+    }
     let mut fs = FS.lock();
     let id = fs.resolve(path).ok()?;
     let node = fs.node(id)?;
@@ -405,6 +513,24 @@ pub fn read_whole(path: &str) -> Option<Vec<u8>> {
 }
 
 pub fn write_whole(path: &str, data: &[u8]) -> Result<(), i64> {
+    if let Some(relative) = fat_relative(path) {
+        let inode = fat32::open(
+            relative,
+            aster_abi::open_flags::WRITE
+                | aster_abi::open_flags::CREATE
+                | aster_abi::open_flags::TRUNC,
+        )?;
+        let mut offset = 0usize;
+        while offset < data.len() {
+            let end = (offset + 8192).min(data.len());
+            let written = fat32::write(inode, offset as u64, &data[offset..end])?;
+            if written == 0 {
+                return Err(crate::syscall::errno::EIO);
+            }
+            offset += written;
+        }
+        return Ok(());
+    }
     let mut fs = FS.lock();
     let id = match fs.resolve(path) {
         Ok(id) => id,
