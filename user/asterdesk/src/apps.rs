@@ -593,19 +593,30 @@ impl TerminalApp {
                 .push("Appearance: Light (fixed in this build)".to_string()),
 
             "accent" => {
-                let names = ["blue", "violet", "teal", "rose", "amber", "green"];
-
                 if let Some(name) = args.first() {
-                    if let Some(index) = names.iter().position(|n| n == name) {
+                    if let Some(index) = theme::ACCENTS
+                        .iter()
+                        .position(|accent| accent.name.eq_ignore_ascii_case(name))
+                    {
                         action = Some(Action::SetAccent(index));
 
-                        self.lines.push(format!("accent: {}", name));
+                        self.lines
+                            .push(format!("accent: {}", theme::ACCENTS[index].name));
                     } else {
                         self.lines.push(format!("unknown accent '{}'", name));
                     }
                 } else {
-                    self.lines
-                        .push("usage: accent blue|violet|teal|rose|amber|green".to_string());
+                    let mut usage = String::from("usage: accent ");
+
+                    for (index, accent) in theme::ACCENTS.iter().enumerate() {
+                        if index > 0 {
+                            usage.push('|');
+                        }
+
+                        usage.push_str(&accent.name.to_lowercase());
+                    }
+
+                    self.lines.push(usage);
                 }
             }
 
