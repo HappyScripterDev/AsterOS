@@ -24,8 +24,12 @@ def type_text(qmp, text: str) -> None:
         time.sleep(0.06)
 
 
-def key(qmp, code: str, ctrl: bool = False) -> None:
-    keys = [{"type": "qcode", "data": "ctrl"}] if ctrl else []
+def key(qmp, code: str, ctrl: bool = False, alt: bool = False) -> None:
+    keys = []
+    if ctrl:
+        keys.append({"type": "qcode", "data": "ctrl"})
+    if alt:
+        keys.append({"type": "qcode", "data": "alt"})
     keys.append({"type": "qcode", "data": code})
     qmp.command("send-key", keys=keys)
     time.sleep(0.15)
@@ -105,6 +109,32 @@ def main() -> int:
         key(qmp, "ret")
         time.sleep(0.4)
 
+        # Move (cut/paste), sorting and forward/back history.
+        key(qmp, "esc")
+        time.sleep(0.3)
+        key(qmp, "n", ctrl=True)
+        time.sleep(0.7)
+        key(qmp, "x", ctrl=True)
+        key(qmp, "v", ctrl=True)
+        time.sleep(1.2)
+        key(qmp, "delete")
+        time.sleep(0.3)
+        key(qmp, "delete")
+        time.sleep(0.8)
+        for _ in range(6):
+            key(qmp, "t", ctrl=True)
+            time.sleep(0.2)
+
+        key(qmp, "home")
+        key(qmp, "down")
+        key(qmp, "ret")
+        time.sleep(0.8)
+        key(qmp, "left", alt=True)
+        time.sleep(0.6)
+        key(qmp, "right", alt=True)
+        time.sleep(0.8)
+        qmp.command("screendump", filename=str((OUT / "05-navigation.ppm").resolve()))
+
         qmp.command("quit")
         qmp.close()
     finally:
@@ -120,13 +150,22 @@ def main() -> int:
         "files: renamed NEWDIR to testdir",
         "files: copied TESTDIR to TESTDIR",
         "files: deleted TESTDIR",
+        "files: moved NEWDIR to NEWDIR-1",
+        "files: sorted by Size ascending",
+        "files: sorted by Kind ascending",
+        "files: sorted by Name descending",
+        "files: sorted by Size descending",
+        "files: sorted by Kind descending",
+        "files: sorted by Name ascending",
+        "files: back to /home/user",
+        "files: forward to /home/user/DOCS",
     ]
     missing = [line for line in required if line not in text]
     if missing or "KERNEL PANIC" in text or "user fault" in text:
         print("FAIL: missing", missing)
         print("".join(ch for ch in text[-3000:] if ch == "\n" or 32 <= ord(ch) < 127))
         return 1
-    print("PASS: Files create, rename, copy, paste, delete, search and info")
+    print("PASS: Files create, rename, copy, move, delete, search, info, sort and navigation")
     return 0
 
 

@@ -18,7 +18,7 @@
   supports timeouts (`ETIMEDOUT`).
 - Files now has forward/back, breadcrumbs, Downloads/Desktop, new folder,
   rename, delete confirmation, copy/move/paste, information, sorting and
-  search, all using real syscalls.
+  search, sort and forward/back history, all using real syscalls.
 - Monitor shows storage usage/free, zombie state and a kernel-log view.
 - Added settings corruption, service restart, Files operation, filesystem and
   block self-tests; documented performance, storage, services and limits.

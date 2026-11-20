@@ -1320,6 +1320,7 @@ impl FilesApp {
             self.path = previous;
             self.search.clear();
             self.reload();
+            sys::log(format!("files: back to {}", self.path).as_bytes());
         }
     }
 
@@ -1329,6 +1330,7 @@ impl FilesApp {
             self.path = next;
             self.search.clear();
             self.reload();
+            sys::log(format!("files: forward to {}", self.path).as_bytes());
         }
     }
 
@@ -1373,6 +1375,7 @@ impl FilesApp {
         let path = join_path(&self.path, &name);
         if sys::mkdir(&path) {
             let _ = sys::sync();
+            self.search.clear();
             self.reload();
             if let Some(index) = self.entries.iter().position(|entry| entry.name == name) {
                 self.selected = index;
@@ -1431,6 +1434,7 @@ impl FilesApp {
         }
         if sys::rename(&old_path, &new_path) >= 0 {
             let _ = sys::sync();
+            self.search.clear();
             self.reload();
             if let Some(index) = self
                 .entries
@@ -1557,6 +1561,18 @@ impl FilesApp {
             } else {
                 "descending"
             }
+        );
+        sys::log(
+            format!(
+                "files: sorted by {} {}",
+                self.sort.label(),
+                if self.ascending {
+                    "ascending"
+                } else {
+                    "descending"
+                }
+            )
+            .as_bytes(),
         );
     }
 
@@ -2141,10 +2157,28 @@ impl FilesApp {
             return None;
         }
 
+        if event.mods & mods::ALT != 0 {
+            match event.code {
+                keys::LEFT => {
+                    self.go_back();
+                    return None;
+                }
+                keys::RIGHT => {
+                    self.go_forward();
+                    return None;
+                }
+                _ => {}
+            }
+        }
+
         if event.mods & mods::CTRL != 0 {
             match event.code {
                 code if code == 'n' as u32 => {
                     self.create_folder();
+                    return None;
+                }
+                code if code == 't' as u32 => {
+                    self.cycle_sort();
                     return None;
                 }
                 code if code == 'c' as u32 => {
@@ -2184,6 +2218,8 @@ impl FilesApp {
             keys::UP => {
                 self.selected = self.selected.saturating_sub(1);
             }
+            keys::HOME => self.selected = 0,
+            keys::END => self.selected = self.entries.len().saturating_sub(1),
             keys::ENTER => return self.open_selected(),
             keys::BACKSPACE => {
                 if self.path != "/" {

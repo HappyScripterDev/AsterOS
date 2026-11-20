@@ -70,7 +70,9 @@ compares the entire 64 KiB pattern, not just the first and last byte.
 - Ctrl+N creates `NEWDIR`.
 - F2 + typing renames it to `TESTDIR`.
 - Ctrl+C, navigate to Documents, Ctrl+V copies it.
-- Delete twice removes the original.
+- Ctrl+X + Ctrl+V moves a fresh folder; Delete twice removes the original.
+- Ctrl+T cycles Name/Size/Kind and direction.
+- Alt+Left/Alt+Right exercise back and forward history.
 - Ctrl+F filters to `WELCOME.TXT`; Ctrl+I shows its information.
 
 Serial evidence: `files: created NEWDIR`, `files: renamed NEWDIR to testdir`,
