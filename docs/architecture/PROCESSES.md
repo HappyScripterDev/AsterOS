@@ -61,6 +61,9 @@ writes to a kernel address to exercise this path.
 - No `KILL`; processes exit themselves or fault.
 - No `argv`/environment; children start with an empty stack.
 - No inheritance of file descriptors or handles.
+- `WAIT` blocks the calling thread. The desktop has one UI thread, so a long
+  child freezes the shell until it exits; the probe commands are short. An
+  asynchronous event/service API is required before apps use blocking waits.
 - No ASLR; user images link at 4 MiB and the stack/heap addresses are fixed.
 - The framebuffer mapping is still available to any process that calls
   `FB_MAP`; a display capability is planned with the display service.
