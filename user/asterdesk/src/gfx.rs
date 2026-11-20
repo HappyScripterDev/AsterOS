@@ -306,12 +306,7 @@ impl Surface {
             } else {
                 0.0
             };
-            self.span(
-                y,
-                rect.x as f32 + inset,
-                rect.right() as f32 - inset,
-                color,
-            );
+            self.span(y, rect.x as f32 + inset, rect.right() as f32 - inset, color);
         }
     }
 
@@ -336,10 +331,38 @@ impl Surface {
                 color,
             );
             // Corner arcs via circle outline quadrants.
-            self.arc(r.x + radius, r.y + radius, radius, core::f32::consts::PI, core::f32::consts::PI * 1.5, color);
-            self.arc(r.right() - radius - 1, r.y + radius, radius, core::f32::consts::PI * 1.5, core::f32::consts::PI * 2.0, color);
-            self.arc(r.right() - radius - 1, r.bottom() - radius - 1, radius, 0.0, core::f32::consts::PI * 0.5, color);
-            self.arc(r.x + radius, r.bottom() - radius - 1, radius, core::f32::consts::PI * 0.5, core::f32::consts::PI, color);
+            self.arc(
+                r.x + radius,
+                r.y + radius,
+                radius,
+                core::f32::consts::PI,
+                core::f32::consts::PI * 1.5,
+                color,
+            );
+            self.arc(
+                r.right() - radius - 1,
+                r.y + radius,
+                radius,
+                core::f32::consts::PI * 1.5,
+                core::f32::consts::PI * 2.0,
+                color,
+            );
+            self.arc(
+                r.right() - radius - 1,
+                r.bottom() - radius - 1,
+                radius,
+                0.0,
+                core::f32::consts::PI * 0.5,
+                color,
+            );
+            self.arc(
+                r.x + radius,
+                r.bottom() - radius - 1,
+                radius,
+                core::f32::consts::PI * 0.5,
+                core::f32::consts::PI,
+                color,
+            );
         }
     }
 
@@ -538,7 +561,14 @@ impl Surface {
         width
     }
 
-    pub fn draw_text(&mut self, x: i32, top: i32, text: &str, face_index: usize, color: Color) -> i32 {
+    pub fn draw_text(
+        &mut self,
+        x: i32,
+        top: i32,
+        text: &str,
+        face_index: usize,
+        color: Color,
+    ) -> i32 {
         let face = font_data::FACES[face_index];
         let baseline = top + face.baseline as i32;
         let mut pen = x;
@@ -567,7 +597,8 @@ impl Surface {
                         if px < self.clip.x || px >= self.clip.right() {
                             continue;
                         }
-                        let coverage = font_data::ATLAS[offset + row as usize * glyph.w as usize + col as usize];
+                        let coverage = font_data::ATLAS
+                            [offset + row as usize * glyph.w as usize + col as usize];
                         if coverage == 0 {
                             continue;
                         }
@@ -588,7 +619,14 @@ impl Surface {
         pen - x
     }
 
-    pub fn draw_text_centered(&mut self, rect: Rect, top: i32, text: &str, face: usize, color: Color) {
+    pub fn draw_text_centered(
+        &mut self,
+        rect: Rect,
+        top: i32,
+        text: &str,
+        face: usize,
+        color: Color,
+    ) {
         let width = self.text_width(text, face);
         self.draw_text(rect.x + (rect.w - width) / 2, top, text, face, color);
     }
@@ -644,7 +682,8 @@ impl Surface {
         }
     }
 
-    pub fn fill_polygon(&mut self, points: &[(i32, i32)], color: Color) {        if points.len() < 3 {
+    pub fn fill_polygon(&mut self, points: &[(i32, i32)], color: Color) {
+        if points.len() < 3 {
             return;
         }
         let min_y = points.iter().map(|p| p.1).min().unwrap_or(0);
@@ -672,7 +711,8 @@ impl Surface {
         }
     }
 
-    pub fn blit_alpha(&mut self, x: i32, y: i32, width: i32, height: i32, pixels: &[u32]) {        for row in 0..height {
+    pub fn blit_alpha(&mut self, x: i32, y: i32, width: i32, height: i32, pixels: &[u32]) {
+        for row in 0..height {
             for col in 0..width {
                 let color = Color(pixels[(row * width + col) as usize]);
                 self.put(x + col, y + row, color);
@@ -716,7 +756,8 @@ pub fn shadow_mask(width: i32, height: i32, radius: i32, margin: i32, blur: i32)
 }
 
 /// Three-pass box blur used for the wallpaper backdrop.
-pub fn box_blur(source: &[u32], width: i32, height: i32, radius: i32) -> Vec<u32> {    let count = (width * height) as usize;
+pub fn box_blur(source: &[u32], width: i32, height: i32, radius: i32) -> Vec<u32> {
+    let count = (width * height) as usize;
     let mut a: Vec<u32> = vec![0; count];
     let mut b: Vec<u32> = vec![0; count];
     a.copy_from_slice(&source[..count]);
@@ -824,7 +865,8 @@ pub fn upscale_bilinear(
             let d = source[(y1 * source_width + x1) as usize];
             let mix = |ch: u32| {
                 let top = ((a >> ch) & 0xFF) as f32 * (1.0 - tx) + ((b >> ch) & 0xFF) as f32 * tx;
-                let bottom = ((c >> ch) & 0xFF) as f32 * (1.0 - tx) + ((d >> ch) & 0xFF) as f32 * tx;
+                let bottom =
+                    ((c >> ch) & 0xFF) as f32 * (1.0 - tx) + ((d >> ch) & 0xFF) as f32 * tx;
                 (top * (1.0 - ty) + bottom * ty) as u32
             };
             destination[(y * width + x) as usize] = (mix(16) << 16) | (mix(8) << 8) | mix(0);
@@ -868,6 +910,146 @@ pub fn ease_in_out(t: f32) -> f32 {
         2.0 * t * t
     } else {
         1.0 - (-2.0 * t + 2.0) * (-2.0 * t + 2.0) / 2.0
+    }
+}
+
+/// Cheap sine approximation (max error ~0.1%) used by the wallpaper generator
+/// so a frame's worth of trig does not depend on libm under emulation.
+pub fn fast_sin(mut x: f32) -> f32 {
+    const PI: f32 = core::f32::consts::PI;
+    const TAU: f32 = core::f32::consts::TAU;
+    x %= TAU;
+    if x > PI {
+        x -= TAU;
+    } else if x < -PI {
+        x += TAU;
+    }
+    let y = 4.0 / PI * x - 4.0 / (PI * PI) * x * x.abs();
+    0.225 * (y * y.abs() - y) + y
+}
+
+fn sample_rgba(bytes: &[u8], width: i32, height: i32, u: f32, v: f32) -> (u8, u8, u8, u8) {
+    let x = (u * (width - 1) as f32).clamp(0.0, (width - 1) as f32);
+    let y = (v * (height - 1) as f32).clamp(0.0, (height - 1) as f32);
+    let x0 = x.floor() as i32;
+    let y0 = y.floor() as i32;
+    let x1 = (x0 + 1).min(width - 1);
+    let y1 = (y0 + 1).min(height - 1);
+    let tx = x - x0 as f32;
+    let ty = y - y0 as f32;
+    let pixel = |px: i32, py: i32| -> (u8, u8, u8, u8) {
+        let index = ((py * width + px) * 4) as usize;
+        (
+            bytes[index],
+            bytes[index + 1],
+            bytes[index + 2],
+            bytes[index + 3],
+        )
+    };
+    let (r00, g00, b00, a00) = pixel(x0, y0);
+    let (r10, g10, b10, a10) = pixel(x1, y0);
+    let (r01, g01, b01, a01) = pixel(x0, y1);
+    let (r11, g11, b11, a11) = pixel(x1, y1);
+    let mix = |a: u8, b: u8, c: u8, d: u8| -> u8 {
+        let top = a as f32 * (1.0 - tx) + b as f32 * tx;
+        let bottom = c as f32 * (1.0 - tx) + d as f32 * tx;
+        (top * (1.0 - ty) + bottom * ty) as u8
+    };
+    (
+        mix(r00, r10, r01, r11),
+        mix(g00, g10, g01, g11),
+        mix(b00, b10, b01, b11),
+        mix(a00, a10, a01, a11),
+    )
+}
+
+impl Surface {
+    /// Draw an RGBA texture (R,G,B,A bytes) scaled with fixed-point bilinear
+    /// filtering. No floating point in the inner loop: QEMU's soft-float is
+    /// far too slow for per-pixel scaling.
+    pub fn draw_texture(
+        &mut self,
+        bytes: &[u8],
+        source_width: i32,
+        source_height: i32,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) {
+        if width <= 0 || height <= 0 || source_width <= 0 || source_height <= 0 {
+            return;
+        }
+        for dy in 0..height {
+            let v = ((dy as i64 * source_height as i64 * 256) / height as i64) as i32;
+            let y0 = (v >> 8).min(source_height - 1);
+            let y1 = (y0 + 1).min(source_height - 1);
+            let fy = (v & 0xFF) as i32;
+            for dx in 0..width {
+                let u = ((dx as i64 * source_width as i64 * 256) / width as i64) as i32;
+                let x0 = (u >> 8).min(source_width - 1);
+                let x1 = (x0 + 1).min(source_width - 1);
+                let fx = (u & 0xFF) as i32;
+                let w00 = (256 - fx) * (256 - fy);
+                let w10 = fx * (256 - fy);
+                let w01 = (256 - fx) * fy;
+                let w11 = fx * fy;
+                let sample = |px: i32, py: i32| -> (i32, i32, i32, i32) {
+                    let index = ((py * source_width + px) * 4) as usize;
+                    (
+                        bytes[index] as i32,
+                        bytes[index + 1] as i32,
+                        bytes[index + 2] as i32,
+                        bytes[index + 3] as i32,
+                    )
+                };
+                let (r00, g00, b00, a00) = sample(x0, y0);
+                let (r10, g10, b10, a10) = sample(x1, y0);
+                let (r01, g01, b01, a01) = sample(x0, y1);
+                let (r11, g11, b11, a11) = sample(x1, y1);
+                let r = (r00 * w00 + r10 * w10 + r01 * w01 + r11 * w11) >> 16;
+                let g = (g00 * w00 + g10 * w10 + g01 * w01 + g11 * w11) >> 16;
+                let b = (b00 * w00 + b10 * w10 + b01 * w01 + b11 * w11) >> 16;
+                let a = (a00 * w00 + a10 * w10 + a01 * w01 + a11 * w11) >> 16;
+                if a > 0 {
+                    self.put(
+                        x + dx,
+                        y + dy,
+                        Color::rgba(r as u8, g as u8, b as u8, a as u8),
+                    );
+                }
+            }
+        }
+    }
+
+    /// Tinted alpha mask used for the menu-bar logo (nearest sampling).
+    pub fn draw_mask(
+        &mut self,
+        bytes: &[u8],
+        source_width: i32,
+        source_height: i32,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        color: Color,
+    ) {
+        if width <= 0 || height <= 0 {
+            return;
+        }
+        for dy in 0..height {
+            let sy = ((dy as i64 * source_height as i64) / height as i64) as i32;
+            let sy = sy.clamp(0, source_height - 1);
+            for dx in 0..width {
+                let sx = ((dx as i64 * source_width as i64) / width as i64) as i32;
+                let sx = sx.clamp(0, source_width - 1);
+                let alpha = bytes[(sy * source_width + sx) as usize];
+                if alpha > 0 {
+                    let tint = (alpha as u32 * color.alpha() as u32 / 255) as u8;
+                    self.put(x + dx, y + dy, color.with_alpha(tint));
+                }
+            }
+        }
     }
 }
 

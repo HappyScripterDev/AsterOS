@@ -10,6 +10,8 @@ mod apps;
 mod desktop;
 mod font_data;
 mod gfx;
+mod icons_data;
+mod logo_data;
 mod sys;
 mod theme;
 mod ui;

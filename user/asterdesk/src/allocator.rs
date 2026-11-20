@@ -41,12 +41,7 @@ unsafe impl GlobalAlloc for Bump {
             if end > size {
                 return core::ptr::null_mut();
             }
-            match OFFSET.compare_exchange_weak(
-                offset,
-                end,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
+            match OFFSET.compare_exchange_weak(offset, end, Ordering::Relaxed, Ordering::Relaxed) {
                 Ok(_) => return (start + aligned) as *mut u8,
                 Err(current) => offset = current,
             }

@@ -82,10 +82,12 @@ Drives QEMU via QMP:
 4. open the launcher and search for Settings,
 5. open Settings and the control centre.
 
-`app_probe.py` opens every built-in app in turn through the launcher and
+`app_probe.py` opens every built-in app in turn through Spotlight and
 captures a screenshot. `pointer_test.py` verifies relative pointer motion, the
-dock, the control centre, and the dark/light theme toggle. `wm_probe.py`
-verifies titlebar dragging and virtual desktop switching.
+dock, the notification centre, the Control Centre and display brightness.
+`wm_probe.py` verifies titlebar dragging and virtual desktop switching.
+`about_probe.py` checks the About page and the supplied logo; `final_ui_probe.py`
+checks Control Centre layering and applying a wallpaper.
 
 These probes assert that the system stays alive and produces frames; they do
 not yet do pixel-diff assertions. Screenshots are reviewed and attached to
@@ -106,7 +108,7 @@ desktop's own frame-time log. Results are recorded in
 | Ramfs semantics | Yes | - | boot self-test |
 | Syscall validation | Partial | - | exercised by apps; no adversarial fuzzing yet |
 | PS/2 keyboard/mouse | Yes | Yes | QMP probes + interactive |
-| Window manager | Partial | Yes | drag/desktop probe; resize/snap manual |
+| Window manager | Partial | Yes | drag/desktop probe; resize/snap manual; macOS-style traffic lights |
 | Launcher/control centre/theme | Yes | Yes | UI probes |
 | Terminal commands | Manual | Yes | `help`, `ls`, `cat`, `write`, `theme` |
 | Files/Text/Notes persistence | Manual | Yes | ramfs only; lost on shutdown |

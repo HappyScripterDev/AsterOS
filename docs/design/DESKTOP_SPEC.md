@@ -8,6 +8,15 @@ runtime blur except the pre-blurred wallpaper buffer.
 
 ---
 
+
+> **Implementation geometry (shipped 2026-11-20).** At 1280x800: menu bar
+> 26 px; dock 68 px tall with 62 px slots and 50 px icons (up to 1.45x
+> magnification); Spotlight panel 660 px wide at y=96, dynamically sized to
+> the result count; Control Centre 322x336 px at the top right; notifications
+> panel 356 px wide and dynamically tall; window title bar 28 px, radius 12 px;
+> traffic lights 12 px with 20 px spacing. The shell is light-only.
+
+
 ## 1. Reference geometry
 
 ```

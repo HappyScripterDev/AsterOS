@@ -54,17 +54,20 @@ into `tools/firmware/`, which is git-ignored. `tools/run.py` combines
 
 If you already have OVMF, set `OVMF_CODE` to a 4 MiB pflash image.
 
-### Fonts (only when changing the atlas)
+### Fonts, logo and icons (only when changing assets)
 
 ```bash
 python -m pip install pillow
-python tools/fontgen.py
+python tools/fontgen.py     # Inter + JetBrains Mono atlas
+python tools/assetgen.py    # supplied logo -> menu/notification/About textures
+python tools/icongen.py     # nine original app icons
 ```
 
-This downloads Inter and JetBrains Mono (both OFL) into `assets/fonts/`
-(git-ignored), rasterizes the faces, and regenerates
-`assets/fonts/atlas.bin` plus `user/asterdesk/src/font_data.rs`. The generated
-atlas is committed, so a normal build does not need Pillow or network access.
+`tools/fontgen.py` downloads Inter and JetBrains Mono (both OFL) into
+`assets/fonts/` (git-ignored) and regenerates the font atlas. `assetgen.py`
+derives the brand mask/colour textures from `assets/Logo/Logo.png`.
+`icongen.py` writes the generated squircle icon set. All generated binaries
+are committed, so a normal build does not need Pillow or network access.
 
 ## 2. Build
 

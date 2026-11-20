@@ -17,6 +17,13 @@ Built-in apps in v1:
 
 ---
 
+
+> **Shipped app shell (2026-11-20).** All apps are light-only. The Settings
+> sidebar is 186 px wide with coloured section tiles; Files uses a Finder-style
+> sidebar and file icons; window titles are centred with traffic lights on the
+> left. Terminal and Text use the monospaced face; the rest use Inter.
+
+
 ## 1. Shared shell
 
 Every app window is a normal window: 28 px titlebar, radius 14, opaque

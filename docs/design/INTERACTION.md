@@ -9,6 +9,15 @@ There is no touch, pen, gesture, or multi-touch input.
 
 ---
 
+
+> **Shipped shell (2026-11-20).** Ctrl+Space opens Spotlight; the menu bar
+> exposes App/File/Edit/View/Window/Help menus; clicking the clock opens the
+> notification centre; the Control Centre exposes display brightness, reduce
+> motion and honest unavailable connectivity/audio states. There is no dark
+> mode. The Edit menu's Undo/Cut/Copy/Paste entries are disabled because those
+> services are not implemented.
+
+
 ## 1. Keyboard shortcuts
 
 "Super" is the Windows/Command/Logo key. Shortcuts are matched on keydown unless noted.

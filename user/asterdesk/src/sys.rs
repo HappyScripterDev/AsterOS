@@ -3,15 +3,7 @@
 use aster_abi::{sys, FramebufferInfo};
 
 #[inline(always)]
-pub unsafe fn syscall6(
-    number: u64,
-    a: u64,
-    b: u64,
-    c: u64,
-    d: u64,
-    e: u64,
-    f: u64,
-) -> i64 {
+pub unsafe fn syscall6(number: u64, a: u64, b: u64, c: u64, d: u64, e: u64, f: u64) -> i64 {
     let result: i64;
     core::arch::asm!(
         "int 0x80",
@@ -28,7 +20,17 @@ pub unsafe fn syscall6(
 }
 
 pub fn write(bytes: &[u8]) -> i64 {
-    unsafe { syscall6(sys::WRITE, 1, bytes.as_ptr() as u64, bytes.len() as u64, 0, 0, 0) }
+    unsafe {
+        syscall6(
+            sys::WRITE,
+            1,
+            bytes.as_ptr() as u64,
+            bytes.len() as u64,
+            0,
+            0,
+            0,
+        )
+    }
 }
 
 pub fn log(message: &[u8]) -> i64 {
@@ -121,17 +123,7 @@ fn path_buffer(path: &str) -> ([u8; 256], usize) {
 
 pub fn open(path: &str, flags: u32) -> i64 {
     let (buffer, _) = path_buffer(path);
-    unsafe {
-        syscall6(
-            sys::OPEN,
-            buffer.as_ptr() as u64,
-            flags as u64,
-            0,
-            0,
-            0,
-            0,
-        )
-    }
+    unsafe { syscall6(sys::OPEN, buffer.as_ptr() as u64, flags as u64, 0, 0, 0, 0) }
 }
 
 pub fn close(fd: i64) -> i64 {
@@ -167,17 +159,7 @@ pub fn write_fd(fd: i64, buffer: &[u8]) -> i64 {
 }
 
 pub fn seek(fd: i64, offset: i64, whence: u32) -> i64 {
-    unsafe {
-        syscall6(
-            sys::SEEK,
-            fd as u64,
-            offset as u64,
-            whence as u64,
-            0,
-            0,
-            0,
-        )
-    }
+    unsafe { syscall6(sys::SEEK, fd as u64, offset as u64, whence as u64, 0, 0, 0) }
 }
 
 pub fn read_dir(path: &str) -> Option<alloc::vec::Vec<(alloc::string::String, bool, u64)>> {
@@ -212,7 +194,8 @@ pub fn read_dir(path: &str) -> Option<alloc::vec::Vec<(alloc::string::String, bo
         }
         for entry in buffer.iter().take(count as usize) {
             let name_len = entry.name_len as usize;
-            let name = String::from_utf8_lossy(&entry.name[..name_len.min(entry.name.len())]).into_owned();
+            let name =
+                String::from_utf8_lossy(&entry.name[..name_len.min(entry.name.len())]).into_owned();
             entries.push((name, entry.ty == 1, entry.inode));
         }
     }
@@ -263,9 +246,8 @@ pub fn read_file(path: &str) -> Option<alloc::vec::Vec<u8>> {
 }
 
 pub fn write_file(path: &str, data: &[u8]) -> bool {
-    let flags = aster_abi::open_flags::WRITE
-        | aster_abi::open_flags::CREATE
-        | aster_abi::open_flags::TRUNC;
+    let flags =
+        aster_abi::open_flags::WRITE | aster_abi::open_flags::CREATE | aster_abi::open_flags::TRUNC;
     let fd = open(path, flags);
     if fd < 0 {
         return false;
@@ -315,7 +297,8 @@ pub fn rtc() -> Option<aster_abi::RtcTime> {
     }
 }
 
-pub fn process_list(buffer: &mut [aster_abi::ProcessInfo]) -> usize {    let result = unsafe {
+pub fn process_list(buffer: &mut [aster_abi::ProcessInfo]) -> usize {
+    let result = unsafe {
         syscall6(
             sys::PROC_LIST,
             buffer.as_mut_ptr() as u64,
@@ -333,7 +316,8 @@ pub fn process_list(buffer: &mut [aster_abi::ProcessInfo]) -> usize {    let res
     }
 }
 
-pub fn system_info() -> Option<aster_abi::SystemInfo> {    let mut info: aster_abi::SystemInfo = unsafe { core::mem::zeroed() };
+pub fn system_info() -> Option<aster_abi::SystemInfo> {
+    let mut info: aster_abi::SystemInfo = unsafe { core::mem::zeroed() };
     let result = unsafe {
         syscall6(
             sys::SYSTEM_INFO,

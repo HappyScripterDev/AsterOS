@@ -17,6 +17,26 @@ value that is not here, add it here first.
 
 ---
 
+
+> **Shipped implementation note (2026-11-20).** Aster Desktop is **light-only**
+> by product decision. The dark palette once explored in this document is
+> archived and not exposed in the UI. The shipped tokens are:
+>
+> - canvas `#F2F2F7`, surface `#FFFFFF`, elevated/sidebar `#F5F5F7`/`#F0F0F3`,
+>   hairline `#D9D9DE`, text `#1D1D1F`, secondary `#6E6E73`,
+>   tertiary `#9A9AA1`;
+> - glass `rgba(255,255,255,196)`, menu bar `rgba(255,255,255,214)`;
+> - accents: Blue `#007AFF` (default), Purple `#AF52DE`, Pink `#FF2D55`,
+>   Red `#FF3B30`, Orange `#FF9500`, Yellow `#FFCC00`, Green `#34C759`,
+>   Graphite `#8E8E93`;
+> - traffic lights `#FF5F57`, `#FEBC2E`, `#28C840`;
+> - menu bar 26 px, dock 68 px, Spotlight panel 660 px wide, window radius 12 px.
+>
+> The desktop follows macOS interaction patterns (menu bar, Spotlight, dock,
+> traffic-light controls) but all artwork is original or supplied by the
+> project. No Apple assets are used.
+
+
 ## 1. Brand
 
 **Aster** means star. The identity is a four-point star with concave sides: precise

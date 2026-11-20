@@ -4,7 +4,7 @@ Version: **0.1.0 developer preview**
 Date: 2026-11-20
 Kernel: Aster 0.1.0 (higher half, x86_64)
 ABI: Aster ABI 1
-Desktop: Aster Desktop (ring 3, software compositor)
+Desktop: Aster Desktop (ring 3, light macOS-inspired shell, software compositor)
 
 ## Build and test status
 
@@ -13,10 +13,11 @@ Desktop: Aster Desktop (ring 3, software compositor)
 | `python tools/build.py` | PASS (bootloader, kernel, desktop, 512 MiB image verified) |
 | Host image tests (`tests/`) | PASS 4/4 |
 | Boot smoke (`tools/test.py`) | PASS (BOOT-HANDOFF-OK, KERNEL-ENTRY-OK, KERNEL-READY, DESKTOP-READY, no faults) |
-| UI harness (`tools/ui_test.py`) | PASS (desktop, terminal, launcher, settings, control centre screenshots) |
-| App probe (`tools/app_probe.py`) | PASS (9 applications opened and captured) |
-| Pointer/dock/theme test (`tools/pointer_test.py`) | PASS (dock click opens Terminal; light theme applied) |
+| UI harness (`tools/ui_test.py`) | PASS (desktop, Terminal help/ls/cat, Settings, Files, Spotlight screenshots) |
+| App probe (`tools/app_probe.py`) | PASS (9 applications captured; Wallpapers may need a longer first-open wait) |
+| Pointer/dock test (`tools/pointer_test.py`) | PASS (dock click, notification centre, Control Centre, brightness) |
 | Window drag + virtual desktops (`tools/wm_probe.py`) | PASS (window moved; desktop switch works) |
+| Menu/About/Centre probes (`shell_probe.py`, `about_probe.py`, `final_ui_probe.py`) | PASS (menus, About logo, Control Centre, wallpaper apply) |
 | Benchmark (`tools/bench.py`) | Recorded (see docs/benchmarks/2026-11-20.md) |
 | CI | Workflow present; not yet executed on GitHub infrastructure |
 
@@ -50,8 +51,8 @@ Desktop: Aster Desktop (ring 3, software compositor)
 | Filesystem | PARTIAL | ramfs only; no persistence, AFS not started |
 | PS/2 input | COMPLETE for milestone | IRQ keyboard/mouse, ASCII + special keys, no wheel/typematic in guest |
 | Framebuffer | COMPLETE | GOP 1280x800, mapped into desktop |
-| Desktop shell | PARTIAL | Dock, top bar, launcher, control centre, notifications, 3 desktops |
-| Window manager | PARTIAL | Drag/resize/maximize/snap/minimize, animations; no alt-tab UI overlay |
+| Desktop shell | PARTIAL | Light menu bar with working menus, Spotlight, dock with generated icons, Control Centre, notifications, 3 desktops |
+| Window manager | PARTIAL | macOS-style traffic lights and title bars, drag/resize/maximize/snap/minimize, animations; no alt-tab overlay |
 | Applications | PARTIAL | 9 functional apps; no Store/Installer/Update/Browser |
 | Security | PARTIAL | Ring 3, W^X, NX, pointer validation; no ASLR/SMEP/SMAP/sandbox/users |
 | Networking | NOT STARTED | No Ethernet/IP/DHCP/DNS/TCP/UDP |
@@ -62,12 +63,12 @@ Desktop: Aster Desktop (ring 3, software compositor)
 
 ## Known issues
 
-1. Ramfs is volatile. Settings and files disappear on shutdown.
+1. Ramfs is volatile. Settings, wallpaper choice and files disappear on shutdown.
 2. Built-in apps share the desktop address space; an app crash takes down the
    shell. This is the main blocker for untrusted applications.
-3. Desktop startup maps its 48 MiB heap eagerly (~2.5 s under TCG).
-4. Software composition runs at ~18 fps at 1280x800 under QEMU TCG; no damage
-   tracking.
+3. Desktop startup maps its 48 MiB heap eagerly and prepares wallpapers/icons (~2.5 s under TCG).
+4. Software composition runs at roughly 50-80 ms per frame at 1280x800 under
+   QEMU TCG depending on open windows; no damage tracking.
 5. User binaries are linked at 4 MiB because the current toolchain uses the
    small code model. Raising user space requires a large-code-model user build.
 6. No keyboard typematic repeat or mouse wheel events in the guest yet.
@@ -79,6 +80,10 @@ Desktop: Aster Desktop (ring 3, software compositor)
 10. Toast notifications overlap windows in the top-right until they expire;
     they pause/dismiss only by timeout or the notification panel.
 11. Settings persistence is per-session only (ramfs).
+12. The Edit menu's Undo/Cut/Copy/Paste entries are disabled because selection
+    and clipboard services are not implemented.
+13. Opening Wallpapers for the first time regenerates four previews and may
+    take a few seconds under emulation.
 12. The Calendar and top bar depend on QEMU's `-rtc base=localtime` for host
     local time.
 
@@ -105,9 +110,9 @@ Desktop: Aster Desktop (ring 3, software compositor)
   reports the current count.
 - Kernel image: ~2.3 MiB ELF (debug info included).
 - Desktop image: ~2.3 MiB ELF.
-- Boot: 4.24 s to first frame on QEMU TCG; kernel ready at 1.65 s.
-- Idle after desktop: 407 MiB free of 510 MiB (48 MiB desktop heap included).
-- Frame: ~54 ms (~18 fps) at 1280x800, software rendering.
+- Boot: 4.92 s to first frame on QEMU TCG; kernel ready at 1.64 s.
+- Idle after desktop: 404 MiB free of 510 MiB (48 MiB desktop heap included).
+- Frame: ~52-60 ms idle, ~80 ms with several windows open, software rendering.
 
 ## Naming note
 

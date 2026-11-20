@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased - light macOS-inspired redesign
+
+- Replaced the dark/light theme system with a single light appearance. There
+  is no dark mode or theme switch anywhere in the UI.
+- New menu bar: supplied Aster logo tile, app name, working File/Edit/View/
+  Window/Help menus, Spotlight, Control Centre, Wi-Fi status and clock.
+- Spotlight-style launcher with translucent panel, filtered results, keyboard
+  navigation and dynamic height.
+- Redesigned nine original squircle app icons with gradients, shadows and
+  app-specific artwork (`tools/icongen.py`).
+- New light procedural wallpapers: Sonoma, Sequoia, Ventura and Monterey.
+- macOS-style window chrome: traffic lights, centred titles, light title bars,
+  softer shadows and rounded corners.
+- Control Centre redesigned with connectivity tiles, display brightness,
+  reduce motion and an explicit light appearance row.
+- Notification centre and toasts redesigned around the supplied logo.
+- About page uses the supplied logo on a branded card.
+- Finder-style file and folder icons in Files.
+- Archived the dark palette; design documentation now describes the shipped
+  light tokens and geometry.
+
 ## 0.1.0 - 2026-11-20 (developer preview)
 
 First bootable, testable Aster OS milestone.
