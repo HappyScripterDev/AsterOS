@@ -100,7 +100,7 @@ Desktop: Aster Desktop (ring 3, software compositor)
 
 ## Metrics snapshot
 
-- Source (tracked text, excluding generated font tables): 21,480 lines across
+- Source (tracked text, excluding generated font tables): 21,677 lines across
   Rust, Markdown, Python, linker scripts, TOML, and YAML. `python tools/loc.py`
   reports the current count.
 - Kernel image: ~2.3 MiB ELF (debug info included).
