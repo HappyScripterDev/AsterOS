@@ -6,11 +6,11 @@ Aster OS is an independent, from-scratch desktop operating system for x86_64.
 It is **not** a Linux distribution, **not** a modified Windows or macOS, and
 **not** a desktop mockup. It has its own UEFI bootloader, higher-half kernel,
 memory manager, scheduler, system-call ABI, filesystem, input stack, and a
-ring-3 desktop environment with a light, macOS-inspired software compositor, isolated child processes and a persistent FAT32 home volume.
+ring-3 desktop environment with a light, macOS-inspired software compositor, isolated child processes, a block/mount storage stack, a persistent FAT32 home volume and a user-space settings service.
 
 ![Aster Desktop](docs/screenshots/desktop.png)
 
-## Status: 0.2.0 core milestone
+## Status: 0.3.0 storage and services
 
 This repository contains a working, bootable system on QEMU (UEFI + GPT/FAT32
 disk image). The current milestone is a **single-CPU developer preview**:
@@ -23,8 +23,11 @@ disk image). The current milestone is a **single-CPU developer preview**:
 | Drivers | COM1 serial, UEFI GOP framebuffer, PS/2 keyboard + mouse (IRQ driven), PIT, PCI config, AHCI (q35) |
 | Filesystem | In-memory ramfs with paths, directories, files, file descriptors, `readdir`, `stat`, `unlink`, `mkdir` |
 | Desktop | Aster Desktop in ring 3: light menu bar, Spotlight launcher, dock with generated app icons and magnification, macOS-style window manager (traffic lights, drag, resize, maximize, snap, animations), Control Centre, notifications, virtual desktops |
-| Storage | Separate GPT/FAT32 data disk over AHCI; `/home/user` is persistent; Settings reports real capacity; boot disk is read-only to the kernel |
+| Storage | Block registry with capacity/bounds/flush/counters, mount table, GPT + FAT32 at `/home/user`; v1 settings with backup; Settings reports device, filesystem, capacity, used/free and I/O |
 | Processes | Private PML4 per process; `SPAWN`/`WAIT`; zombie reaping; every ring-3 exception contained; isolation probe with exit status 42 and a deliberate fault returning -11 |
+| Services | `configd` (ring 3) owns validated settings over IPC; desktop supervisor restarts it; direct-I/O fallback; timed IPC receive |
+| Files | Real create, rename, delete, copy, move, info, sort, search, forward/back and breadcrumbs on the mounted filesystem |
+| Monitor | CPU/memory/process cards, storage usage, real I/O counters and a kernel-log view |
 | IPC | Kernel channels with per-process handles, 256-byte messages, blocking send/receive, close/hangup; ping-pong verified between isolated processes |
 | Apps | Terminal (real shell + ramfs), Files, Settings, Calculator, Monitor, Text, Notes, Calendar, Wallpapers |
 | Tests | Image verifier, kernel self-tests, ramfs self-test, QEMU boot smoke test, scripted UI/pointer tests |
@@ -82,13 +85,22 @@ filesystem syscalls; it contains no UI code.
 
 ### Design
 
+![Files](docs/screenshots/files.png)
+
 ![Persistence after reboot](docs/screenshots/persistence.png)
 
-The home directory is a real FAT32 volume on a second QEMU disk. Files,
+Storage is layered: AHCI -> block registry -> mount table -> FAT32/ramfs, with
+capacity checks, flush and I/O counters. The home directory is a real FAT32
+volume on a second QEMU disk. Files,
 notes and preferences survive a reboot; `tools/persistence_test.py` writes in
 the guest, verifies the volume with an independent host parser, reboots, and
 reads the data back. The boot image is never written by the kernel. The volume
 uses 8.3 names and has no journal yet, and Settings states both limits.
+
+Settings are versioned (`version=1`), validated per key and written through a
+temporary file with a backup. `configd` owns them in the normal path; the
+desktop supervisor restarts it on failure and falls back to direct I/O so the
+session is never locked out. See [0.3.0 release docs](docs/releases/0.3.0/).
 
 The desktop is light-only by product decision and follows macOS interaction
 patterns without copying Apple code or artwork: a translucent menu bar, a
@@ -146,11 +158,11 @@ Details: [docs/architecture/OVERVIEW.md](docs/architecture/OVERVIEW.md),
 | OVMF firmware to Aster Boot | 1.42 s |
 | Aster Boot + kernel handoff | 1.62 s |
 | Kernel initialised | 1.64 s |
-| Desktop ready | 4.64 s |
-| First compositor frame | 4.75 s |
-| Frame time (1280x800 software, idle) | ~47-60 ms |
+| Desktop ready | 4.79 s |
+| First compositor frame | 4.90 s |
+| Frame time (1280x800 software, idle) | ~47 ms |
 | Frame time with several windows open | ~80 ms |
-| Memory free after desktop init | 397 MiB of 510 MiB |
+| Memory free after desktop init | 396 MiB of 510 MiB |
 
 Method and caveats: [docs/benchmarks/2026-11-20.md](docs/benchmarks/2026-11-20.md).
 These numbers are for QEMU's software CPU emulation and are not comparable to

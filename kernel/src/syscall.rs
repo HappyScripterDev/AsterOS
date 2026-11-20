@@ -65,7 +65,14 @@ pub fn handle(frame: &mut InterruptFrame) {
         sys::WAIT => wait_process(pml4, args[0], args[1]),
         sys::CHANNEL_CREATE => channel_create(process, args[0]),
         sys::CHANNEL_SEND => channel_send(pml4, process, args[0] as u32, args[1], args[2] as usize),
-        sys::CHANNEL_RECV => channel_recv(pml4, process, args[0] as u32, args[1], args[2] as usize),
+        sys::CHANNEL_RECV => channel_recv(
+            pml4,
+            process,
+            args[0] as u32,
+            args[1],
+            args[2] as usize,
+            args[3],
+        ),
         sys::CHANNEL_CLOSE => match crate::ipc::close(process, args[0] as u32) {
             Ok(()) => 0,
             Err(code) => error(code),
@@ -73,6 +80,10 @@ pub fn handle(frame: &mut InterruptFrame) {
         sys::RTC => rtc_time(pml4, args[0]),
         sys::PROC_LIST => process_list(pml4, args[0], args[1] as usize),
         sys::STORAGE_INFO => storage_info(pml4, args[0]),
+        sys::STORAGE_DETAILS => storage_details(pml4, args[0]),
+        sys::RENAME => rename_path(pml4, args[0], args[1]),
+        sys::LOG_READ => log_read(pml4, args[0], args[1] as usize),
+        sys::SYNC => sync_storage(),
         sys::SHUTDOWN => shutdown(),
         _ => error(errno::ENOSYS),
     };
@@ -534,13 +545,14 @@ fn channel_recv(
     handle: u32,
     pointer: u64,
     capacity: usize,
+    timeout_ms: u64,
 ) -> u64 {
     let capacity = capacity.min(crate::ipc::MAX_PAYLOAD);
     if capacity == 0 {
         return error(errno::EINVAL);
     }
     let mut buffer = alloc::vec![0u8; capacity];
-    match crate::ipc::recv(process, handle, &mut buffer) {
+    match crate::ipc::recv(process, handle, &mut buffer, timeout_ms) {
         Ok(length) => {
             if vmm::copy_to_user(pml4, pointer, &buffer[..length]).is_err() {
                 return error(errno::EINVAL);
@@ -595,6 +607,78 @@ fn storage_info(pml4: u64, pointer: u64) -> u64 {
         return error(errno::EINVAL);
     }
     0
+}
+
+fn storage_details(pml4: u64, pointer: u64) -> u64 {
+    let details = crate::storage::details();
+    let info = aster_abi::StorageDetails {
+        mounted: details.mounted as u32,
+        healthy: details.healthy as u32,
+        filesystem: details.filesystem,
+        read_only: details.read_only as u32,
+        sector_bytes: details.sector_size,
+        cluster_bytes: details.cluster_bytes,
+        device: details.device,
+        reserved: 0,
+        total_bytes: details.total_bytes,
+        free_bytes: details.free_bytes,
+        device_sectors: details.device_sectors,
+        partition_start: details.partition_start,
+        partition_sectors: details.partition_sectors,
+        sectors_read: details.stats.sectors_read,
+        sectors_written: details.stats.sectors_written,
+        reads: details.stats.reads,
+        writes: details.stats.writes,
+        flushes: details.stats.flushes,
+        errors: details.stats.errors,
+        label: details.label,
+        reserved2: 0,
+    };
+    let bytes = unsafe {
+        core::slice::from_raw_parts(
+            &info as *const aster_abi::StorageDetails as *const u8,
+            core::mem::size_of::<aster_abi::StorageDetails>(),
+        )
+    };
+    if vmm::copy_to_user(pml4, pointer, bytes).is_err() {
+        return error(errno::EINVAL);
+    }
+    0
+}
+
+fn rename_path(pml4: u64, old_pointer: u64, new_pointer: u64) -> u64 {
+    let old_path = match read_path(pml4, old_pointer) {
+        Ok(path) => path,
+        Err(code) => return error(code),
+    };
+    let new_path = match read_path(pml4, new_pointer) {
+        Ok(path) => path,
+        Err(code) => return error(code),
+    };
+    match crate::fs::rename(&old_path, &new_path) {
+        Ok(()) => 0,
+        Err(code) => error(code),
+    }
+}
+
+fn log_read(pml4: u64, pointer: u64, capacity: usize) -> u64 {
+    let capacity = capacity.min(16 * 1024);
+    if capacity == 0 {
+        return 0;
+    }
+    let mut buffer = alloc::vec![0u8; capacity];
+    let count = logging::read_log(&mut buffer);
+    if vmm::copy_to_user(pml4, pointer, &buffer[..count]).is_err() {
+        return error(errno::EINVAL);
+    }
+    count as u64
+}
+
+fn sync_storage() -> u64 {
+    match crate::fs::sync() {
+        code if code < 0 => error(code),
+        _ => 0,
+    }
 }
 
 fn shutdown() -> u64 {

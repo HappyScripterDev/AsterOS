@@ -120,11 +120,12 @@ pub fn truncate(surface: &Surface, text: &str, face: usize, max_width: i32) -> S
     let mut result = String::new();
 
     let mut width = 0;
+    let ellipsis = surface.text_width("...", face);
 
     for ch in text.chars() {
-        let w = surface.text_width(&ch.to_string(), face);
+        let w = surface.char_width(ch, face);
 
-        if width + w + surface.text_width("...", face) > max_width {
+        if width + w + ellipsis > max_width {
             break;
         }
 
@@ -136,6 +137,39 @@ pub fn truncate(surface: &Surface, text: &str, face: usize, max_width: i32) -> S
     result.push_str("...");
 
     result
+}
+
+/// Draw text clipped to `max_width` without allocating. Used on per-frame paths
+/// such as the Files list, where `truncate` would grow the bump heap forever.
+pub fn draw_text_truncated(
+    surface: &mut Surface,
+    x: i32,
+    y: i32,
+    text: &str,
+    face: usize,
+    color: Color,
+    max_width: i32,
+) {
+    if surface.text_width(text, face) <= max_width {
+        surface.draw_text(x, y, text, face, color);
+        return;
+    }
+
+    let ellipsis = surface.text_width("...", face);
+    let mut width = 0;
+    let mut end = 0usize;
+    for (index, ch) in text.char_indices() {
+        let w = surface.char_width(ch, face);
+        if width + w + ellipsis > max_width {
+            break;
+        }
+        width += w;
+        end = index + ch.len_utf8();
+    }
+    if end > 0 {
+        surface.draw_text(x, y, &text[..end], face, color);
+    }
+    surface.draw_text(x + width, y, "...", face, color);
 }
 
 pub fn app_icon_index(icon: Icon) -> Option<usize> {

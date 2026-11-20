@@ -13,7 +13,7 @@ SEED_FILES: dict[str, bytes] = {
         b"Files here survive a reboot.\n"
     ),
     "/SETTINGS.CNF": (
-        b"theme=light\naccent=blue\nanimations=1.00\n"
+        b"version=1\naccent=blue\nanimations=1.00\n"
         b"wallpaper=0\nreduce_motion=0\nbrightness=1.00\n"
     ),
     "/NOTES/IDEAS.TXT": (

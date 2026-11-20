@@ -261,13 +261,17 @@ pub fn channel_send(handle: u32, data: &[u8]) -> i64 {
 }
 
 pub fn channel_recv(handle: u32, buffer: &mut [u8]) -> i64 {
+    channel_recv_timeout(handle, buffer, 0)
+}
+
+pub fn channel_recv_timeout(handle: u32, buffer: &mut [u8], timeout_ms: u64) -> i64 {
     unsafe {
         syscall6(
             sys::CHANNEL_RECV,
             handle as u64,
             buffer.as_mut_ptr() as u64,
             buffer.len() as u64,
-            0,
+            timeout_ms,
             0,
             0,
         )
@@ -300,6 +304,60 @@ pub fn storage_info() -> Option<aster_abi::StorageInfo> {
     } else {
         Some(info)
     }
+}
+
+pub fn storage_details() -> Option<aster_abi::StorageDetails> {
+    let mut details: aster_abi::StorageDetails = unsafe { core::mem::zeroed() };
+    let result = unsafe {
+        syscall6(
+            sys::STORAGE_DETAILS,
+            &mut details as *mut aster_abi::StorageDetails as u64,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    if result < 0 {
+        None
+    } else {
+        Some(details)
+    }
+}
+
+pub fn rename(old_path: &str, new_path: &str) -> i64 {
+    let (old_buffer, _) = path_buffer(old_path);
+    let (new_buffer, _) = path_buffer(new_path);
+    unsafe {
+        syscall6(
+            sys::RENAME,
+            old_buffer.as_ptr() as u64,
+            new_buffer.as_ptr() as u64,
+            0,
+            0,
+            0,
+            0,
+        )
+    }
+}
+
+pub fn log_read(buffer: &mut [u8]) -> i64 {
+    unsafe {
+        syscall6(
+            sys::LOG_READ,
+            buffer.as_mut_ptr() as u64,
+            buffer.len() as u64,
+            0,
+            0,
+            0,
+            0,
+        )
+    }
+}
+
+pub fn sync() -> i64 {
+    unsafe { syscall6(sys::SYNC, 0, 0, 0, 0, 0, 0) }
 }
 
 pub fn stat(path: &str) -> Option<aster_abi::FileStat> {

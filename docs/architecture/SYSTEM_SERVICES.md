@@ -2,10 +2,11 @@
 
 ## 1. What exists today
 
-Aster OS has no separate init daemon or service manager yet. The kernel starts
-the desktop as PID 1 and exposes kernel-resident services through syscalls.
-`SPAWN`/`WAIT` and channel IPC now exist, so a service manager is the next
-architectural step rather than a facade.
+Aster OS has no separate init daemon yet. The kernel starts the desktop as
+PID 1; the desktop supervises `configd`, the first user-space service, over a
+bootstrap channel. Kernel-resident services remain syscalls. A generic service
+manager with dependencies, discovery and capabilities is the next step; the
+current supervisor only starts, detects, reaps and restarts configd.
 
 | Service | Location | Interface | State |
 |---|---|---|---|
@@ -19,6 +20,8 @@ architectural step rather than a facade.
 | Process creation | `SPAWN`/`WAIT`, private PML4 | syscall | Implemented |
 | IPC | `ipc.rs`, `CHANNEL_*` | syscall | Implemented (channels, handles, blocking) |
 | Persistent home | AHCI + GPT + FAT32 at `/home/user` | VFS syscalls | Implemented |
+| Settings service | `configd` (ring 3) | IPC `PING`/`GET`/`SET`/`EXIT` | Implemented |
+| Service supervisor | desktop `services.rs` | spawn, PROC_LIST, WAIT, restart | Implemented (configd only) |
 | Session / shell / WM | ring-3 `asterdesk` | owns the screen | Implemented |
 | Built-in apps | `apps.rs` | in-process modules of the desktop | Implemented |
 
@@ -36,7 +39,8 @@ kernel init
   -> load /DESK ELF as PID 1
   -> scheduler start
   -> desktop maps framebuffer, allocates its heap, builds wallpaper
-  -> desktop loads preferences from /home/user/SETTINGS.CNF
+  -> desktop starts configd, pings it, then loads settings over IPC
+  -> configd falls back to direct /home/user/SETTINGS.CNF I/O if unavailable
   -> desktop shows the shell (no login; single implicit user)
   -> desktop may SPAWN children and exchange channel messages
 ```
@@ -63,8 +67,8 @@ Order of work, with dependencies:
 
 1. ~~`SPAWN`/`WAIT` syscalls and a minimal init process.~~ Done.
 2. ~~Channel IPC plus `CHANNEL_*` syscalls.~~ Done.
-3. A service manager that starts services in dependency order, restarts them on
-   failure, and passes a bootstrap channel. Next.
+3. ~~A first service and supervisor.~~ Done for configd; a generic manager
+   with dependencies, discovery and restart policy is next.
 4. Storage service over IPC on top of the existing AHCI/FAT32 stack.
 5. Identity service: user database, login, per-process credentials.
 6. Policy service: capability checks for filesystem, network, devices.
@@ -90,8 +94,12 @@ it.
 ## 6. Current limitations
 
 - Single user (`user`), no passwords, no lock screen, no privilege escalation.
-- No service isolation: one address space for the shell and all apps.
-- No way to spawn additional user processes (`SPAWN` returns `ENOSYS`).
-- No IPC, so no cross-process service protocol.
+- Built-in applications still share the desktop address space; only spawned
+  children (configd and the probes) have private address spaces.
+- One managed service and one supervisor; no generic service manager,
+  dependency graph, discovery or policies.
 - No device manager or hotplug; PS/2 and GOP are initialised directly.
-- No persistence; settings and files live in ramfs and vanish on shutdown.
+- System files remain in ramfs; `/home/user` is persistent on the data disk,
+  with 8.3 names and no journal.
+- No `KILL`: a hung service cannot be forcibly restarted; the desktop falls
+  back to direct settings I/O.

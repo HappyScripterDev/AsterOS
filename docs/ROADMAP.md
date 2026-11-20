@@ -29,6 +29,16 @@ BootInfo, ExitBootServices, kernel entry, serial logging, GDT/IDT, panic path.
 Evidence: `BOOT-HANDOFF-OK` and `KERNEL-READY` in `build/serial.log`; boot smoke
 test in `tools/test.py`.
 
+## Version 0.3.0 - Storage and services (COMPLETE, 2026-11-20)
+
+Delivered: block registry with capacity/bounds/flush/counters, mount table,
+AHCI flush, `STORAGE_DETAILS`, `RENAME`, `SYNC`, `LOG_READ`, versioned settings
+with backup and corruption recovery, the `configd` settings service with a
+desktop supervisor and IPC receive timeouts, real Files operations, and
+Monitor storage/log storage views.
+
+Evidence: `docs/releases/0.3.0/TEST_REPORT.md` and `PERFORMANCE.md`.
+
 ## Phase 3 - Core kernel (PARTIAL)
 
 Complete: physical frames, virtual memory, kernel heap, exceptions, PIC/PIT,
@@ -57,9 +67,9 @@ Remaining:
 | PCI enumeration | - | Enumerate q35 devices, map BARs, log vendor/device |
 | ACPI tables | - | Parse RSDP/XSDT/MADT; discover CPUs and the I/O APIC |
 | VirtIO block | PCI, VMM | Read/write a raw image in QEMU, verified by host comparison |
-| Persistent filesystem | block driver | DONE (M1): FAT32 home, write/reboot/read verified; no journal yet |
+| Persistent filesystem | block driver | DONE: block registry, mount table, FAT32 home; write/reboot/read verified; no journal yet |
 | AFS v2 (journal/COW) | AFS v1 | Crash-injection tests recover without corruption |
-| Service manager + init | SPAWN, IPC | NEXT (M4): services restart independently; desktop survives a service crash |
+| Service manager + init | SPAWN, IPC | PARTIAL: configd supervisor restarts one service; generic manager/KILL next |
 
 ## Phase 5 - Graphics (PARTIAL)
 
@@ -124,7 +134,7 @@ farm, installer media, release notes, signed artifacts.
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Single-address-space apps | Any app bug compromises the session | Prioritise SPAWN + IPC and move apps out of the shell |
-| No persistence | Users lose work; cannot install anything | AFS + block driver are the next storage milestone |
+| Storage limits | 8.3 names, no journal, no permissions, single volume | VFAT names and a journal are the next storage milestone |
 | Software rendering performance | Unusable on low-end emulation | Damage tracking, lazy heap, GPU path later |
 | Weak security model | Cannot claim "secure OS" | Threat model, explicit gaps, phased hardening |
 | Scope creep into mockups | Loss of credibility | Feature matrix requires evidence; banned fake UI |

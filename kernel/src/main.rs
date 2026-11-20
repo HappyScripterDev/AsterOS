@@ -22,6 +22,7 @@ use core::fmt::Write;
 use core::panic::PanicInfo;
 
 mod arch;
+mod block;
 mod boot;
 mod drivers;
 mod exceptions;
@@ -29,6 +30,7 @@ mod fs;
 mod ipc;
 mod logging;
 mod mm;
+mod mount;
 mod sched;
 mod storage;
 mod sync;
@@ -36,7 +38,7 @@ mod syscall;
 mod time;
 mod user;
 
-pub const VERSION: &str = "0.2.0 (core milestone)";
+pub const VERSION: &str = "0.3.0 (storage and services)";
 
 global_asm!(
     r#"

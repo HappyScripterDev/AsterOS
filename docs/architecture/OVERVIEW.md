@@ -49,7 +49,8 @@ Aster Boot (boot/, Rust, x86_64-unknown-uefi)
 Aster Kernel (kernel/, higher half)
   |  entry stub: cli, set RSP to the kernel .bss stack, call kernel_main
   |  serial logging -> boot contract validation -> GDT/TSS -> IDT -> PIC/PIT
-  |  -> PMM -> VMM -> heap -> AHCI/GPT/FAT32 -> ramfs -> scheduler -> PS/2
+  |  -> PMM -> VMM -> heap -> block/AHCI/GPT/mount/FAT32 -> ramfs
+  |  -> scheduler -> PS/2
   |  -> spawn desktop
   v
 Aster Desktop (user/asterdesk, ring 3, PID 1)
@@ -94,7 +95,8 @@ early boot. This is a documented constraint, not a general VMM feature.
 | Scheduler | `sched.rs` | Threads, processes, round-robin, FXSAVE context switch, preemption, reaping. |
 | Syscalls | `syscall.rs` | `int 0x80` dispatch, pointer validation, errno returns. |
 | Processes | `sched.rs`, `user.rs` | Spawn, wait, zombies, fault containment; see `docs/architecture/PROCESSES.md`. |
-| Storage | `storage/`, `drivers/ahci.rs` | GPT + FAT32 home volume over AHCI; see `docs/architecture/STORAGE.md`. |
+| Services | `user/configd`, `user/asterdesk/src/services.rs` | Settings service, supervisor, restart and fallback; see `docs/architecture/SYSTEM_SERVICES.md`. |
+| Storage | `block.rs`, `mount.rs`, `storage/`, `drivers/ahci.rs` | Device registry, mount table, GPT + FAT32 home over AHCI; see `docs/architecture/STORAGE.md`. |
 | Filesystem | `fs.rs` | VFS front-end: ramfs root, FAT32 mount at `/home/user`, inode dispatch, fd-facing operations. |
 | Input | `drivers/ps2.rs` | PS/2 keyboard/mouse, event queue. |
 | Clock | `arch/rtc.rs` | CMOS wall clock for the Calendar and top bar. |

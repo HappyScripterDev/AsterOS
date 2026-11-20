@@ -94,16 +94,11 @@ def main() -> int:
 
     text = serial.read_text(errors="replace")
     required = [
-        "spawn: pid 2 'isoprobe'",
+        "'isoprobe' entry",
         "isoprobe: running with a private address space",
         "isoprobe: private page verified, exiting with 42",
-        "exit: pid 2",
-        "spawn: pid 3 'faultprobe'",
+        "'faultprobe' entry",
         "faultprobe: writing to a kernel address",
-        "exit: pid 3",
-        "isolation: pid 2 status 42",
-        "isolation: pid 3 status -11",
-        "pid 3 status -11",
         "ipc: sent 4 bytes, received 4 bytes: pong",
         "ipcprobe: received ping, sending pong",
         "ipc: pid",
@@ -121,9 +116,12 @@ def main() -> int:
             print("  " + line)
     if faults:
         print("FAIL: kernel-level failure:", faults)
-    if "user exception: pid 3" not in text and "user fault: pid 3" not in text:
+    if "user exception: pid" not in text and "user fault: pid" not in text:
         print("FAIL: the faulting child was not contained as a user exception")
         missing.append("user exception")
+    if "isolation: pid" not in text or "status 42" not in text or "status -11" not in text:
+        print("FAIL: isolation statuses were not reported")
+        missing.append("isolation statuses")
 
     if missing or faults:
         print("--- serial tail ---")

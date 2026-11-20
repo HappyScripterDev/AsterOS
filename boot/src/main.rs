@@ -36,6 +36,7 @@ const DESK_PATH: &str = "\\DESK.ELF";
 const ISOPROBE_PATH: &str = "\\ISOPROBE.ELF";
 const FAULTPROBE_PATH: &str = "\\FAULTPRB.ELF";
 const IPCPROBE_PATH: &str = "\\IPCPROBE.ELF";
+const CONFIGD_PATH: &str = "\\CONFIGD.ELF";
 const TRAMPOLINE: [u8; 8] = [0x48, 0x0F, 0x22, 0xDE, 0x48, 0xFF, 0xE0, 0x90];
 
 #[inline]
@@ -522,6 +523,15 @@ pub extern "efiapi" fn efi_main(image: Handle, system_table: *mut SystemTable) -
                 module_count += 1;
             }
             Err(e) => log!("[warn] IPC probe not available: {}\n", e),
+        }
+    }
+    if module_count == 4 {
+        match unsafe { load_module(bs, root, CONFIGD_PATH, "configd") } {
+            Ok(module) => {
+                modules[module_count] = module;
+                module_count += 1;
+            }
+            Err(e) => log!("[warn] settings service not available: {}\n", e),
         }
     }
 

@@ -1,8 +1,8 @@
 # Aster OS - Project Status
 
-Version: **0.2.0 core milestone** (M1 storage, M2 process isolation, M3 IPC complete)
+Version: **0.3.0 storage and services**
 Date: 2026-11-20
-Kernel: Aster 0.2.0 (higher half, x86_64)
+Kernel: Aster 0.3.0 (higher half, x86_64)
 ABI: Aster ABI 1
 Desktop: Aster Desktop (ring 3, light macOS-inspired shell, software compositor)
 
@@ -19,6 +19,11 @@ Desktop: Aster Desktop (ring 3, light macOS-inspired shell, software compositor)
 | Window drag + virtual desktops (`tools/wm_probe.py`) | PASS (window moved; desktop switch works) |
 | Menu/About/Centre probes (`shell_probe.py`, `about_probe.py`, `final_ui_probe.py`) | PASS (menus, About logo, Control Centre, wallpaper apply) |
 | Persistence (`tools/persistence_test.py`) | PASS (write, reboot, read; host FAT32 verifier) |
+| Settings reliability (`tools/settings_test.py`) | PASS (corrupt, invalid values, valid round-trip) |
+| Service lifecycle (`tools/service_test.py`) | PASS (GET/SET, exit, restart, save after restart) |
+| Files operations (`tools/files_probe.py`) | PASS (create, rename, copy, paste, delete, search, info) |
+| Filesystem probe (`tools/fs_probe.py`) | PASS (64 KiB write/read, rename, delete, sync) |
+| Status pages (`tools/status_probe.py`) | PASS (Monitor logs, Settings storage) |
 | Storage probe (`tools/storage_probe.py`) | PASS (Settings capacity, missing disk, corrupt volume) |
 | Benchmark (`tools/bench.py`) | Recorded (see docs/benchmarks/2026-11-20.md) |
 | CI | Workflow present; not yet executed on GitHub infrastructure |
@@ -49,23 +54,26 @@ Desktop: Aster Desktop (ring 3, light macOS-inspired shell, software compositor)
 | VMM | COMPLETE for milestone | 4-level, U/S on all levels, per-process PML4, NX/W^X |
 | Kernel heap | COMPLETE | first-fit, coalescing, GlobalAlloc, self-test |
 | Scheduler | PARTIAL | Preemptive user threads, zombies, event wake-up for WAIT/IPC, cooperative kernel threads, no SMP |
-| Syscalls | PARTIAL | 32 numbers assigned, 31 implemented; SPAWN/WAIT and channels work; SET_THEME returns ENOSYS |
-| Filesystem | PARTIAL | ramfs root plus a mounted FAT32 home; 8.3 names, no journal, no permissions |
+| Syscalls | PARTIAL | 36 numbers assigned, 35 implemented; SET_THEME returns ENOSYS (light appearance is fixed) |
+| Filesystem | PARTIAL | VFS + mount table, ramfs root and FAT32 home; rename/sync; 8.3 names, no journal, no permissions |
 | PS/2 input | COMPLETE for milestone | IRQ keyboard/mouse, ASCII + special keys, no wheel/typematic in guest |
 | Framebuffer | COMPLETE | GOP 1280x800, mapped into desktop |
-| Desktop shell | PARTIAL | Light menu bar with working menus, Spotlight, dock with generated icons, Control Centre, notifications, 3 desktops |
+| Desktop shell | PARTIAL | Light menu bar, Spotlight, dock, Control Centre, notifications, Files operations, Monitor storage/logs |
 | Window manager | PARTIAL | macOS-style traffic lights and title bars, drag/resize/maximize/snap/minimize, animations; no alt-tab overlay |
 | Applications | PARTIAL | 9 functional apps; no Store/Installer/Update/Browser |
 | Security | PARTIAL | Ring 3, W^X, NX, pointer validation; no ASLR/SMEP/SMAP/sandbox/users |
+| Settings | IMPLEMENTED | Versioned, validated, backup/restore, configd service, direct fallback |
+| Services | PARTIAL | configd + supervisor restart/timeout/fallback; no generic manager or KILL |
+| Logging | PARTIAL | Levels + timestamps + subsystem prefixes; LOG_READ + Monitor view; volatile ring only |
 | Networking | NOT STARTED | No Ethernet/IP/DHCP/DNS/TCP/UDP |
 | Audio | NOT STARTED | No HDA/AC'97 driver; UI states this |
-| Storage | PARTIAL | AHCI polling driver, GPT parsing, FAT32 home mounted at /home/user; data survives reboot |
+| Storage | PARTIAL | Block registry (bounds/flush/counters), mount table, GPT/FAT32, STORAGE_DETAILS; single-sector DMA |
 | Installer/updates | NOT STARTED | Explicitly absent from UI |
 | SDK | NOT STARTED | ABI documented; no compiler/package template yet |
 
 ## Known issues
 
-1. System files remain in ramfs. `/home/user` is persistent only when the data disk is attached; without it the old volatile home is used.
+1. System files remain in ramfs. `/home/user` is persistent only when the data disk is attached; without it the old volatile home is used. The volume uses 8.3 names and has no journal.
 2. Built-in apps share the desktop address space; an app crash takes down the
    shell. Spawned child processes are isolated, but the apps have not moved yet.
 3. Desktop startup maps its 48 MiB heap eagerly and prepares wallpapers/icons (~2.5 s under TCG).
@@ -82,7 +90,9 @@ Desktop: Aster Desktop (ring 3, light macOS-inspired shell, software compositor)
 10. Toast notifications overlap windows in the top-right until they expire;
     they pause/dismiss only by timeout or the notification panel.
 11. The persistent volume uses 8.3 uppercase names and has no journal or permissions; a power loss can truncate a file.
-12. IPC has no timeout, bulk shared-memory path or arbitrary handle transfer yet; queues hold 8 x 256 bytes.
+12. IPC receive has a timeout; send has none. No bulk shared-memory path or arbitrary handle transfer; queues hold 8 x 256 bytes.
+13. There is one managed service (configd) and no KILL; a hung service cannot be forcibly restarted.
+14. Files copy is recursive but depth-limited and has no progress UI; search is per-directory.
 12. The Edit menu's Undo/Cut/Copy/Paste entries are disabled because selection
     and clipboard services are not implemented.
 13. Opening Wallpapers for the first time regenerates four previews and may
@@ -104,7 +114,7 @@ Desktop: Aster Desktop (ring 3, light macOS-inspired shell, software compositor)
 | K5 | SMEP/SMAP/UMIP | NOT STARTED | Kernel exploit tests fail; feature logged at boot |
 | D1 | PCI + ACPI discovery | PARTIAL | PCI config and AHCI work; ACPI/MADT missing |
 | D2 | Persistent filesystem | COMPLETE (M1) | FAT32 home mounted; write/reboot/read passes |
-| S1 | Service manager + init | NEXT | Services restart; desktop survives a service failure |
+| S1 | Service manager + init | PARTIAL (configd supervisor) | configd restarts; desktop survives failure; generic manager/KILL remain |
 | U1 | Damage tracking | NOT STARTED | Idle composition under 5% CPU in QEMU |
 | U2 | Accessibility pass | NOT STARTED | Focus visible, reduce motion and contrast verified |
 | A1 | Archive app + format | NOT STARTED | Create/extract with integrity check |
@@ -116,9 +126,10 @@ Desktop: Aster Desktop (ring 3, light macOS-inspired shell, software compositor)
   reports the current count.
 - Kernel image: ~2.3 MiB ELF (debug info included).
 - Desktop image: ~2.3 MiB ELF.
-- Boot: 4.75 s to first frame on QEMU TCG; kernel ready at 1.67 s.
-- Idle after desktop: 397 MiB free of 510 MiB (48 MiB desktop heap included).
-- Frame: ~47-60 ms idle, ~80 ms with several windows open or brightness below 100%, software rendering.
+- Boot: 4.90 s to first frame on QEMU TCG; kernel ready at 1.84 s.
+- Idle after desktop: 396 MiB free of 510 MiB (48 MiB desktop heap included).
+- Frame: ~47 ms idle; brightness below 100% adds a full-surface blend.
+- Storage: 64 KiB FAT32 write ~19 ms, read ~17 ms (single-sector AHCI).
 
 ## Naming note
 

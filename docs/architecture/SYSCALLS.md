@@ -36,13 +36,17 @@ kernel writes. Missing mappings return `EINVAL`, never fault the kernel.
 | 23 | SYSTEM_INFO | out ptr | bytes | Implemented |
 | 24 | CHANNEL_CREATE | ptr to `u32[2]` | handles written | Implemented |
 | 25 | CHANNEL_SEND | handle, ptr, len | bytes | Implemented, blocks when full |
-| 26 | CHANNEL_RECV | handle, ptr, cap | bytes | Implemented, blocks when empty |
+| 26 | CHANNEL_RECV | handle, ptr, cap, timeout ms | bytes | Implemented, blocks when empty; ETIMEDOUT |
 | 27 | SET_THEME | - | 0 | **ENOSYS** (appearance is fixed to light) |
 | 28 | SHUTDOWN | - | halts | Implemented, no capability check |
 | 29 | RTC | out ptr | 0 | Implemented |
 | 30 | PROC_LIST | out ptr, max | count | Implemented |
 | 31 | STORAGE_INFO | out ptr | 0 | Implemented (M1) |
-| 32 | CHANNEL_CLOSE | handle | 0 | Implemented (M3) |
+| 32 | CHANNEL_CLOSE | handle | 0 | Implemented |
+| 33 | STORAGE_DETAILS | out ptr | 0 | Implemented (0.3.0) |
+| 34 | RENAME | old path, new path | 0 | Implemented, same directory |
+| 35 | LOG_READ | ptr, cap | bytes | Implemented |
+| 36 | SYNC | - | 0 | Implemented (AHCI flush) |
 
 ## Error codes
 
@@ -64,6 +68,7 @@ kernel writes. Missing mappings return `EINVAL`, never fault the kernel.
 ## Blocking
 
 `SLEEP_MS`, `WAIT` (until a child becomes a zombie), `CHANNEL_SEND` (queue
-full), `CHANNEL_RECV` (queue empty) and `EXIT` (never returns) block today. A blocking
+full), `CHANNEL_RECV` (queue empty, optionally until a timeout) and `EXIT`
+(never returns) block today. A blocking
 syscall must set the thread state and call the scheduler itself; the gate
 already runs with interrupts disabled. IPC will add `block_on`/`wake`.

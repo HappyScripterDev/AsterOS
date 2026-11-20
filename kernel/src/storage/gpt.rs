@@ -1,6 +1,6 @@
 //! GPT parsing: protective MBR, header CRC, entry array, data partition.
 
-use crate::drivers::ahci;
+use crate::block;
 
 const DATA_TYPE_GUID: [u8; 16] = [
     0xA2, 0xA0, 0xD0, 0xEB, 0xE5, 0xB9, 0x33, 0x44, 0x87, 0xC0, 0x68, 0xB6, 0xB7, 0x26, 0x99, 0xC7,
@@ -25,13 +25,13 @@ fn crc32(data: &[u8]) -> u32 {
 
 fn read(disk: usize, lba: u64) -> Result<[u8; 512], &'static str> {
     let mut sector = [0u8; 512];
-    ahci::read_sector(disk, lba, &mut sector)?;
+    block::read(disk, lba, &mut sector).map_err(|_| "block read failed")?;
     Ok(sector)
 }
 
 /// Find the first partition carrying the Aster data type GUID.
 pub fn find_partition(disk: usize) -> Result<Option<Partition>, &'static str> {
-    let sector_count = ahci::disk_sectors(disk);
+    let sector_count = block::info(disk).map(|device| device.sectors).unwrap_or(0);
     if sector_count < 34 {
         return Err("disk too small");
     }

@@ -18,7 +18,7 @@ use alloc::vec;
 
 use alloc::vec::Vec;
 
-use aster_abi::{keys, InputEvent, ProcessInfo, SystemInfo};
+use aster_abi::{keys, mods, InputEvent, ProcessInfo, StorageDetails, SystemInfo};
 
 use crate::font_data::{BODY, BODY_MEDIUM, CAPTION, DISPLAY, HEADLINE, MONO, SMALL, TITLE};
 
@@ -136,6 +136,8 @@ pub enum Action {
     SetBrightness(f32),
 
     SavePreferences,
+
+    RestartServices,
 }
 
 pub enum App {
@@ -297,7 +299,7 @@ impl App {
 
             App::Calculator(app) => app.mouse(x, y, content, theme),
 
-            App::Monitor(_) => None,
+            App::Monitor(app) => app.mouse(x, y, content),
 
             App::Text(app) => app.mouse(x, y, content),
 
@@ -370,7 +372,7 @@ impl TerminalApp {
     fn new() -> Self {
         let mut lines = Vec::new();
 
-        lines.push("Aster Terminal 0.2.0".to_string());
+        lines.push("Aster Terminal 0.3.0".to_string());
 
         lines.push("Type `help` for the command list.".to_string());
 
@@ -439,6 +441,11 @@ impl TerminalApp {
                     "  ipc                  run the channel IPC probe",
                     "  ipchup               forged handle and hangup checks",
                     "  systest              invalid syscall argument checks",
+                    "  sync                 flush the persistent device",
+                    "  mv <old> <new>       rename within a directory",
+                    "  fstest               write/read/rename/delete benchmark",
+                    "  services             show the settings service state",
+                    "  svcfail              restart the settings service",
                     "  open <app>           launch an application",
                     "  echo <text>          print text",
                     "  clear                clear the screen",
@@ -526,7 +533,7 @@ impl TerminalApp {
 
             "uname" => self
                 .lines
-                .push("Aster OS 0.2.0 x86_64 (aster kernel)".to_string()),
+                .push("Aster OS 0.3.0 x86_64 (aster kernel)".to_string()),
 
             "date" => match sys::rtc() {
                 Some(t) => self.lines.push(format!(
@@ -793,6 +800,119 @@ impl TerminalApp {
                 self.lines.push(message);
             }
 
+            "sync" => {
+                let result = sys::sync();
+                self.lines.push(if result >= 0 {
+                    "sync: persistent device flushed".to_string()
+                } else {
+                    format!("sync failed: {}", result)
+                });
+            }
+
+            "mv" => {
+                if args.len() >= 2 {
+                    let result = sys::rename(args[0], args[1]);
+                    if result >= 0 {
+                        self.lines
+                            .push(format!("renamed {} to {}", args[0], args[1]));
+                        let _ = sys::sync();
+                    } else {
+                        self.lines.push(format!("rename failed: {}", result));
+                    }
+                } else {
+                    self.lines.push("usage: mv <old> <new>".to_string());
+                }
+            }
+
+            "fstest" => {
+                const SIZE: usize = 64 * 1024;
+                let mut payload = vec![0u8; SIZE];
+                for (index, byte) in payload.iter_mut().enumerate() {
+                    *byte = (index % 251) as u8;
+                }
+
+                let start = sys::time_ms();
+                let written = sys::write_file("/home/user/FSTEST.TXT", &payload);
+                let write_ms = sys::time_ms().saturating_sub(start);
+
+                let start = sys::time_ms();
+                let read_back = sys::read_file("/home/user/FSTEST.TXT");
+                let read_ms = sys::time_ms().saturating_sub(start);
+
+                let read_ok = read_back
+                    .as_ref()
+                    .map(|data| {
+                        data.len() == SIZE && data[0] == 0 && data[SIZE - 1] == payload[SIZE - 1]
+                    })
+                    .unwrap_or(false);
+
+                let stored_size = sys::stat("/home/user/FSTEST.TXT")
+                    .map(|stat| stat.size)
+                    .unwrap_or(0);
+                let first_bad = read_back
+                    .as_ref()
+                    .and_then(|data| {
+                        data.iter()
+                            .zip(payload.iter())
+                            .position(|(stored, expected)| stored != expected)
+                    })
+                    .map(|index| index as i64)
+                    .unwrap_or(-1);
+
+                let renamed = sys::rename("/home/user/FSTEST.TXT", "/home/user/FSTEST2.TXT") >= 0;
+                let renamed_ok = renamed
+                    && sys::stat("/home/user/FSTEST2.TXT")
+                        .map(|stat| stat.size == SIZE as u64)
+                        .unwrap_or(false);
+
+                let deleted = sys::unlink("/home/user/FSTEST2.TXT");
+                let _ = sys::sync();
+
+                let message = format!(
+                    "fstest: write 64 KiB {} ms (size {}), read {} ms ({} B, first bad {}), rename {} , delete {}",
+                    write_ms,
+                    stored_size,
+                    read_ms,
+                    read_back.as_ref().map(|data| data.len()).unwrap_or(0),
+                    first_bad,
+                    if renamed_ok { "ok" } else { "FAILED" },
+                    if deleted { "ok" } else { "FAILED" }
+                );
+
+                if written && read_ok && renamed_ok && deleted {
+                    sys::log(message.as_bytes());
+                }
+
+                self.lines.push(message);
+            }
+
+            "services" => {
+                let mut buffer: [ProcessInfo; 16] = unsafe { core::mem::zeroed() };
+                let count = sys::process_list(&mut buffer);
+                let mut found = None;
+                for process in &buffer[..count] {
+                    let name = core::str::from_utf8(&process.name)
+                        .unwrap_or("?")
+                        .trim_end_matches('\0');
+                    if name == "configd" {
+                        found = Some((process.pid, process.state));
+                    }
+                }
+                let line = match found {
+                    Some((pid, 0)) => format!("configd: running (pid {})", pid),
+                    Some((pid, _)) => format!("configd: exited, awaiting restart (pid {})", pid),
+                    None => "configd: not running".to_string(),
+                };
+                sys::log(line.as_bytes());
+                self.lines.push(line);
+            }
+
+            "svcfail" => {
+                self.lines
+                    .push("Requested a settings-service restart".to_string());
+                action = Some(Action::RestartServices);
+            }
+
             "open" => match args.first().copied() {
                 Some("files") => action = Some(Action::Launch(AppKind::Files)),
 
@@ -970,37 +1090,145 @@ impl TerminalApp {
 
 pub struct FilesApp {
     path: String,
-
-    entries: Vec<(String, bool)>,
-
+    all_entries: Vec<Entry>,
+    entries: Vec<Entry>,
     selected: usize,
-
     scroll: usize,
-
     back: Vec<String>,
-
+    forward: Vec<String>,
     last_click: (usize, u64),
-
     status: String,
+    sort: SortMode,
+    ascending: bool,
+    search: String,
+    search_focus: bool,
+    rename: Option<String>,
+    info: Option<Vec<String>>,
+    confirm_delete: bool,
+    clipboard: Option<Clipboard>,
+    breadcrumb_hits: Vec<(Rect, String)>,
+}
+
+#[derive(Clone)]
+struct Entry {
+    name: String,
+    is_dir: bool,
+    size: u64,
+}
+
+#[derive(Clone)]
+struct Clipboard {
+    path: String,
+    name: String,
+    is_dir: bool,
+    cut: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SortMode {
+    Name,
+    Size,
+    Kind,
+}
+
+impl SortMode {
+    fn label(self) -> &'static str {
+        match self {
+            SortMode::Name => "Name",
+            SortMode::Size => "Size",
+            SortMode::Kind => "Kind",
+        }
+    }
+}
+
+const FILE_ACTIONS: [(&str, i32); 8] = [
+    ("New", 40),
+    ("Delete", 50),
+    ("Rename", 58),
+    ("Info", 38),
+    ("Copy", 44),
+    ("Move", 44),
+    ("Paste", 48),
+    ("Sort Name", 82),
+];
+
+fn join_path(directory: &str, name: &str) -> String {
+    if directory == "/" {
+        format!("/{}", name)
+    } else {
+        format!("{}/{}", directory, name)
+    }
+}
+
+fn parent_path(path: &str) -> String {
+    path.rsplit_once('/')
+        .map(|(parent, _)| if parent.is_empty() { "/" } else { parent })
+        .unwrap_or("/")
+        .to_string()
+}
+
+fn format_size(bytes: u64) -> String {
+    if bytes >= 1024 * 1024 {
+        format!("{:.1} MiB", bytes as f64 / (1024.0 * 1024.0))
+    } else if bytes >= 1024 {
+        format!("{} KiB", bytes / 1024)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
+fn copy_tree(source: &str, destination: &str, depth: u32) -> bool {
+    if depth > 8 || !sys::mkdir(destination) {
+        return false;
+    }
+    let Some(entries) = sys::read_dir(source) else {
+        return false;
+    };
+    for (name, is_dir, _) in entries {
+        let from = join_path(source, &name);
+        let to = join_path(destination, &name);
+        if is_dir {
+            if !copy_tree(&from, &to, depth + 1) {
+                return false;
+            }
+        } else {
+            let Some(data) = sys::read_file(&from) else {
+                return false;
+            };
+            if !sys::write_file(&to, &data) {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 impl FilesApp {
     fn new() -> Self {
         let mut app = Self {
             path: "/home/user".to_string(),
-
+            all_entries: Vec::new(),
             entries: Vec::new(),
-
             selected: 0,
-
             scroll: 0,
-
             back: Vec::new(),
-
+            forward: Vec::new(),
             last_click: (usize::MAX, 0),
-
             status: String::new(),
+            sort: SortMode::Name,
+            ascending: true,
+            search: String::new(),
+            search_focus: false,
+            rename: None,
+            info: None,
+            confirm_delete: false,
+            clipboard: None,
+            breadcrumb_hits: Vec::new(),
         };
+
+        // The seed volume has these locations; older volumes may not.
+        let _ = sys::mkdir("/home/user/DOWNLOADS");
+        let _ = sys::mkdir("/home/user/DESKTOP");
 
         app.reload();
 
@@ -1008,55 +1236,348 @@ impl FilesApp {
     }
 
     fn reload(&mut self) {
-        self.entries.clear();
-
-        self.selected = 0;
-
-        self.scroll = 0;
+        self.all_entries.clear();
 
         match sys::read_dir(&self.path) {
-            Some(mut entries) => {
-                entries.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-
+            Some(entries) => {
                 for (name, is_dir, _) in entries {
-                    self.entries.push((name, is_dir));
+                    let size = if is_dir {
+                        0
+                    } else {
+                        sys::stat(&join_path(&self.path, &name))
+                            .map(|stat| stat.size)
+                            .unwrap_or(0)
+                    };
+                    self.all_entries.push(Entry { name, is_dir, size });
                 }
-
+                self.sort_entries();
+                self.apply_filter();
                 self.status = format!("{} items", self.entries.len());
             }
-
             None => {
+                self.all_entries.clear();
+                self.entries.clear();
                 self.status = format!("Cannot open {}", self.path);
             }
+        }
+
+        self.selected = 0;
+        self.scroll = 0;
+    }
+
+    fn sort_entries(&mut self) {
+        let mode = self.sort;
+        let ascending = self.ascending;
+        self.all_entries.sort_by(|a, b| {
+            if a.is_dir != b.is_dir {
+                return b.is_dir.cmp(&a.is_dir);
+            }
+            let order = match mode {
+                SortMode::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                SortMode::Size => a.size.cmp(&b.size).then(a.name.cmp(&b.name)),
+                SortMode::Kind => a
+                    .name
+                    .rsplit_once('.')
+                    .map(|(_, ext)| ext.to_lowercase())
+                    .cmp(&b.name.rsplit_once('.').map(|(_, ext)| ext.to_lowercase()))
+                    .then(a.name.cmp(&b.name)),
+            };
+            if ascending {
+                order
+            } else {
+                order.reverse()
+            }
+        });
+    }
+
+    fn apply_filter(&mut self) {
+        let needle = self.search.to_lowercase();
+        self.entries = self
+            .all_entries
+            .iter()
+            .filter(|entry| needle.is_empty() || entry.name.to_lowercase().contains(&needle))
+            .cloned()
+            .collect();
+        if self.selected >= self.entries.len() {
+            self.selected = self.entries.len().saturating_sub(1);
         }
     }
 
     fn navigate(&mut self, path: String) {
         if path != self.path {
             self.back.push(self.path.clone());
-
+            self.forward.clear();
             self.path = path;
-
+            self.search.clear();
+            self.confirm_delete = false;
             self.reload();
         }
     }
 
+    fn go_back(&mut self) {
+        if let Some(previous) = self.back.pop() {
+            self.forward.push(self.path.clone());
+            self.path = previous;
+            self.search.clear();
+            self.reload();
+        }
+    }
+
+    fn go_forward(&mut self) {
+        if let Some(next) = self.forward.pop() {
+            self.back.push(self.path.clone());
+            self.path = next;
+            self.search.clear();
+            self.reload();
+        }
+    }
+
+    fn selections_path(&self) -> Option<String> {
+        self.entries
+            .get(self.selected)
+            .map(|entry| join_path(&self.path, &entry.name))
+    }
+
     fn open_selected(&mut self) -> Option<Action> {
-        let (name, is_dir) = self.entries.get(self.selected)?.clone();
-
-        let path = if self.path == "/" {
-            format!("/{}", name)
-        } else {
-            format!("{}/{}", self.path, name)
-        };
-
-        if is_dir {
+        let entry = self.entries.get(self.selected)?.clone();
+        let path = join_path(&self.path, &entry.name);
+        if entry.is_dir {
             self.navigate(path);
-
             None
         } else {
             Some(Action::OpenPath(path))
         }
+    }
+
+    fn unique_name(&self, base: &str) -> String {
+        if sys::stat(&join_path(&self.path, base)).is_none() {
+            return base.to_string();
+        }
+        let (stem, extension) = match base.rsplit_once('.') {
+            Some((stem, extension)) => (stem, format!(".{}", extension)),
+            None => (base, String::new()),
+        };
+        for index in 1..100u32 {
+            let suffix = format!("-{}", index);
+            let limit = 8usize.saturating_sub(suffix.len()).max(1);
+            let candidate = format!("{}{}{}", &stem[..stem.len().min(limit)], suffix, extension);
+            if sys::stat(&join_path(&self.path, &candidate)).is_none() {
+                return candidate;
+            }
+        }
+        base.to_string()
+    }
+
+    fn create_folder(&mut self) {
+        let name = self.unique_name("NEWDIR");
+        let path = join_path(&self.path, &name);
+        if sys::mkdir(&path) {
+            let _ = sys::sync();
+            self.reload();
+            if let Some(index) = self.entries.iter().position(|entry| entry.name == name) {
+                self.selected = index;
+            }
+            sys::log(format!("files: created {}", name).as_bytes());
+            self.status = format!("Created {}", name);
+        } else {
+            self.status = "Could not create the folder".to_string();
+        }
+    }
+
+    fn delete_selected(&mut self) {
+        let Some(entry) = self.entries.get(self.selected).cloned() else {
+            return;
+        };
+        if !self.confirm_delete {
+            self.confirm_delete = true;
+            self.status = format!("Click Delete again to remove {}", entry.name);
+            return;
+        }
+        let path = join_path(&self.path, &entry.name);
+        if sys::unlink(&path) {
+            let _ = sys::sync();
+            self.reload();
+            sys::log(format!("files: deleted {}", entry.name).as_bytes());
+            self.status = format!("Deleted {}", entry.name);
+        } else {
+            self.status = format!("Could not delete {}", entry.name);
+        }
+        self.confirm_delete = false;
+    }
+
+    fn begin_rename(&mut self) {
+        if let Some(entry) = self.entries.get(self.selected) {
+            self.rename = Some(entry.name.clone());
+            self.confirm_delete = false;
+        }
+    }
+
+    fn commit_rename(&mut self) {
+        let Some(buffer) = self.rename.take() else {
+            return;
+        };
+        let Some(entry) = self.entries.get(self.selected).cloned() else {
+            return;
+        };
+        let name = buffer.trim();
+        if name.is_empty() || name.contains('/') || name == "." || name == ".." {
+            self.status = "Invalid name".to_string();
+            return;
+        }
+        let old_path = join_path(&self.path, &entry.name);
+        let new_path = join_path(&self.path, name);
+        if new_path == old_path {
+            return;
+        }
+        if sys::rename(&old_path, &new_path) >= 0 {
+            let _ = sys::sync();
+            self.reload();
+            if let Some(index) = self
+                .entries
+                .iter()
+                .position(|entry| entry.name.eq_ignore_ascii_case(name))
+            {
+                self.selected = index;
+            }
+            sys::log(format!("files: renamed {} to {}", entry.name, name).as_bytes());
+            self.status = format!("Renamed to {}", name);
+        } else {
+            self.status = "Rename failed (name may exist or exceed 8.3)".to_string();
+        }
+    }
+
+    fn show_info(&mut self) {
+        let Some(entry) = self.entries.get(self.selected) else {
+            return;
+        };
+        let path = join_path(&self.path, &entry.name);
+        let Some(stat) = sys::stat(&path) else {
+            self.status = "Information unavailable".to_string();
+            return;
+        };
+        let stored = if path.starts_with("/home/user") {
+            "Persistent home"
+        } else {
+            "In-memory system"
+        };
+        self.info = Some(alloc::vec![
+            entry.name.clone(),
+            format!("Path: {}", path),
+            format!("Type: {}", if entry.is_dir { "Folder" } else { "Document" }),
+            format!("Size: {}", format_size(stat.size)),
+            format!("Inode: {}", stat.inode),
+            format!("Mode: {:o}", stat.mode),
+            format!("Storage: {}", stored),
+            "Enter or click to close".to_string(),
+        ]);
+    }
+
+    fn copy_selected(&mut self, cut: bool) {
+        let Some(entry) = self.entries.get(self.selected).cloned() else {
+            return;
+        };
+        let path = join_path(&self.path, &entry.name);
+        self.status = if cut {
+            format!("Ready to move {}", entry.name)
+        } else {
+            format!("Copied {} to the clipboard", entry.name)
+        };
+        self.clipboard = Some(Clipboard {
+            path,
+            name: entry.name,
+            is_dir: entry.is_dir,
+            cut,
+        });
+        self.confirm_delete = false;
+    }
+
+    fn paste(&mut self) {
+        let Some(clipboard) = self.clipboard.clone() else {
+            return;
+        };
+        let target_name = self.unique_name(&clipboard.name);
+        let target = join_path(&self.path, &target_name);
+        let copied = if clipboard.is_dir {
+            copy_tree(&clipboard.path, &target, 0)
+        } else {
+            match sys::read_file(&clipboard.path) {
+                Some(data) => sys::write_file(&target, &data),
+                None => false,
+            }
+        };
+        if !copied {
+            self.status = "Paste failed".to_string();
+            return;
+        }
+        if clipboard.cut {
+            let _ = sys::unlink(&clipboard.path);
+            self.clipboard = None;
+        }
+        let _ = sys::sync();
+        self.reload();
+        if let Some(index) = self
+            .entries
+            .iter()
+            .position(|entry| entry.name == target_name)
+        {
+            self.selected = index;
+        }
+        sys::log(
+            format!(
+                "files: {} {} to {}",
+                if clipboard.cut { "moved" } else { "copied" },
+                clipboard.name,
+                target_name
+            )
+            .as_bytes(),
+        );
+        self.status = if clipboard.cut {
+            format!("Moved to {}", target_name)
+        } else {
+            format!("Pasted as {}", target_name)
+        };
+    }
+
+    fn cycle_sort(&mut self) {
+        self.sort = match self.sort {
+            SortMode::Name => SortMode::Size,
+            SortMode::Size => SortMode::Kind,
+            SortMode::Kind => {
+                self.ascending = !self.ascending;
+                SortMode::Name
+            }
+        };
+        self.sort_entries();
+        self.apply_filter();
+        self.status = format!(
+            "Sorted by {} {}",
+            self.sort.label(),
+            if self.ascending {
+                "ascending"
+            } else {
+                "descending"
+            }
+        );
+    }
+
+    fn action_rect(toolbar: Rect, index: usize) -> Rect {
+        let mut x = toolbar.x + 10;
+        for (position, (_, width)) in FILE_ACTIONS.iter().enumerate() {
+            if position == index {
+                return Rect::new(x, toolbar.y + 40, *width, 24);
+            }
+            x += width + 6;
+        }
+        Rect::new(x, toolbar.y + 40, 0, 0)
+    }
+
+    fn search_rect(toolbar: Rect) -> Rect {
+        Rect::new(
+            (toolbar.right() - 142).max(toolbar.x + 10),
+            toolbar.y + 40,
+            132,
+            24,
+        )
     }
 
     fn draw(&mut self, surface: &mut Surface, content: Rect, theme: &Theme) {
@@ -1065,12 +1586,13 @@ impl FilesApp {
         surface.fill_rect(content, palette.surface);
 
         let sidebar = Rect::new(content.x, content.y, 176, content.h);
-
         surface.fill_rect(sidebar, palette.sidebar);
 
         let places = [
             ("Home", "/home/user", Icon::Home),
             ("Documents", "/home/user/DOCS", Icon::Folder),
+            ("Downloads", "/home/user/DOWNLOADS", Icon::Folder),
+            ("Desktop", "/home/user/DESKTOP", Icon::Monitor),
             ("Notes", "/home/user/NOTES", Icon::Notes),
             ("System", "/system", Icon::Settings),
             ("Logs", "/var/log", Icon::Text),
@@ -1078,14 +1600,11 @@ impl FilesApp {
         ];
 
         let mut y = content.y + 16;
-
         for (label, path, icon) in places {
             let row = Rect::new(sidebar.x + 8, y, sidebar.w - 16, 30);
-
             if self.path == path {
                 surface.fill_rounded(row, 8, theme.accent_color().with_alpha(38));
             }
-
             ui::draw_icon(
                 surface,
                 icon,
@@ -1098,7 +1617,6 @@ impl FilesApp {
                 1,
                 theme,
             );
-
             surface.draw_text(
                 row.x + 32,
                 row.y + 8,
@@ -1110,7 +1628,6 @@ impl FilesApp {
                     palette.secondary
                 },
             );
-
             y += 32;
         }
 
@@ -1123,37 +1640,161 @@ impl FilesApp {
             sidebar.right(),
             content.y,
             content.right() - sidebar.right(),
-            44,
+            72,
         );
-
         surface.fill_rect(toolbar, palette.surface);
-
         surface.fill_rect(
             Rect::new(toolbar.x, toolbar.bottom() - 1, toolbar.w, 1),
             palette.hairline,
         );
 
-        let button = |index: i32| Rect::new(toolbar.x + 10 + index * 32, toolbar.y + 10, 26, 24);
-
-        for (index, icon) in [Icon::ChevronLeft, Icon::Up, Icon::Refresh]
-            .iter()
-            .enumerate()
+        for (index, icon) in [
+            Icon::ChevronLeft,
+            Icon::ChevronRight,
+            Icon::Up,
+            Icon::Refresh,
+        ]
+        .iter()
+        .enumerate()
         {
-            let rect = button(index as i32);
-
-            surface.fill_rounded(rect, 7, palette.elevated);
-
-            ui::draw_icon(surface, *icon, rect.inset(6), palette.secondary, 1, theme);
+            let rect = Rect::new(toolbar.x + 10 + index as i32 * 32, toolbar.y + 8, 26, 24);
+            let enabled = match index {
+                0 => !self.back.is_empty(),
+                1 => !self.forward.is_empty(),
+                2 => self.path != "/",
+                _ => true,
+            };
+            surface.fill_rounded(
+                rect,
+                7,
+                if enabled {
+                    palette.elevated
+                } else {
+                    palette.surface
+                },
+            );
+            ui::draw_icon(
+                surface,
+                *icon,
+                rect.inset(6),
+                if enabled {
+                    palette.secondary
+                } else {
+                    palette.tertiary
+                },
+                1,
+                theme,
+            );
         }
 
-        let path_color = palette.secondary;
+        // Breadcrumbs.
+        self.breadcrumb_hits.clear();
+        let mut crumbs: Vec<(String, String)> = alloc::vec![("Aster".to_string(), "/".to_string())];
+        let mut accumulated = String::new();
+        for component in self.path.split('/').filter(|part| !part.is_empty()) {
+            accumulated.push('/');
+            accumulated.push_str(component);
+            crumbs.push((component.to_string(), accumulated.clone()));
+        }
+        if crumbs.len() > 4 {
+            let last = crumbs.split_off(crumbs.len() - 3);
+            let mut shortened = alloc::vec![crumbs[0].clone(), ("...".to_string(), String::new())];
+            shortened.extend(last);
+            crumbs = shortened;
+        }
+        let mut x = toolbar.x + 146;
+        let right_limit = toolbar.right() - 12;
+        for (index, (label, path)) in crumbs.iter().enumerate() {
+            let width = surface.text_width(label, BODY).min(110);
+            if x + width > right_limit {
+                break;
+            }
+            let hit = Rect::new(x - 3, toolbar.y + 10, width + 6, 20);
+            if !path.is_empty() && self.path == *path {
+                surface.fill_rounded(hit, 5, theme.accent_color().with_alpha(28));
+            }
+            ui::draw_text_truncated(
+                surface,
+                x,
+                toolbar.y + 14,
+                label,
+                BODY,
+                if self.path == *path {
+                    palette.text
+                } else {
+                    palette.secondary
+                },
+                110,
+            );
+            if !path.is_empty() {
+                self.breadcrumb_hits.push((hit, path.clone()));
+            }
+            x += width + 8;
+            if index + 1 < crumbs.len() {
+                surface.draw_text(x - 6, toolbar.y + 14, ">", SMALL, palette.tertiary);
+                x += 10;
+            }
+        }
 
-        surface.draw_text(
-            toolbar.x + 116,
-            toolbar.y + 14,
-            &self.path,
-            BODY,
-            path_color,
+        let has_selection = !self.entries.is_empty();
+        for (index, (label, _)) in FILE_ACTIONS.iter().enumerate() {
+            let rect = Self::action_rect(toolbar, index);
+            if rect.x + rect.w > toolbar.right() - 150 {
+                break;
+            }
+            let enabled = match index {
+                0 => true,
+                1 | 2 | 3 | 4 | 5 => has_selection,
+                6 => self.clipboard.is_some(),
+                _ => true,
+            };
+            let label = if index == 1 && self.confirm_delete {
+                "Confirm"
+            } else if index == 7 {
+                self.sort.label()
+            } else {
+                label
+            };
+            ui::draw_button(surface, rect, label, index == 0, theme, false, enabled);
+        }
+
+        let search = Self::search_rect(toolbar);
+        surface.fill_rounded(
+            search,
+            7,
+            if self.search_focus {
+                palette.elevated
+            } else {
+                palette.surface
+            },
+        );
+        surface.stroke_rounded(
+            search,
+            7,
+            1,
+            if self.search_focus {
+                theme.accent_color()
+            } else {
+                palette.hairline
+            },
+        );
+        let shown = if self.search.is_empty() {
+            "Search"
+        } else {
+            &self.search
+        };
+        ui::draw_text_truncated(
+            surface,
+            search.x + 8,
+            search.y + 4,
+            shown,
+            CAPTION,
+            if self.search.is_empty() {
+                palette.tertiary
+            } else {
+                palette.text
+            },
+            search.w - 16,
         );
 
         let list = Rect::new(
@@ -1162,22 +1803,32 @@ impl FilesApp {
             toolbar.w,
             content.bottom() - toolbar.bottom(),
         );
-
         let row_height = 32;
-
-        let visible = (list.h / row_height).max(1) as usize;
-
+        let visible = ((list.h - 22) / row_height).max(1) as usize;
         if self.selected < self.scroll {
             self.scroll = self.selected;
         }
-
         if self.selected >= self.scroll + visible {
             self.scroll = self.selected - visible + 1;
         }
 
-        let mut y = list.y + 4;
+        if self.entries.is_empty() {
+            let message = if self.search.is_empty() {
+                "This folder is empty"
+            } else {
+                "No matching items"
+            };
+            surface.draw_text_centered(
+                list,
+                list.y + list.h / 2 - 8,
+                message,
+                BODY,
+                palette.tertiary,
+            );
+        }
 
-        for (index, (name, is_dir)) in self
+        let mut y = list.y + 4;
+        for (index, entry) in self
             .entries
             .iter()
             .enumerate()
@@ -1185,33 +1836,59 @@ impl FilesApp {
             .take(visible)
         {
             let row = Rect::new(list.x + 8, y, list.w - 16, row_height - 2);
-
             if index == self.selected {
                 surface.fill_rounded(row, 6, theme.accent_color());
             }
-
-            let _ = palette.secondary;
-
             ui::draw_file_icon(
                 surface,
                 Rect::new(row.x + 8, row.y + 7, 18, 18),
-                *is_dir,
+                entry.is_dir,
                 index == self.selected,
                 theme,
             );
-
             let text_color = if index == self.selected {
                 Color::rgb(255, 255, 255)
             } else {
                 palette.text
             };
-
-            surface.draw_text(row.x + 34, row.y + 8, name, BODY, text_color);
-
-            if *is_dir {
-                surface.draw_text(row.right() - 20, row.y + 8, ">", SMALL, palette.tertiary);
+            ui::draw_text_truncated(
+                surface,
+                row.x + 34,
+                row.y + 8,
+                &entry.name,
+                BODY,
+                text_color,
+                row.w - 150,
+            );
+            let detail = if entry.is_dir {
+                "Folder".to_string()
+            } else {
+                format_size(entry.size)
+            };
+            surface.draw_text(
+                row.right() - 118,
+                row.y + 9,
+                &detail,
+                CAPTION,
+                if index == self.selected {
+                    Color::rgba(255, 255, 255, 210)
+                } else {
+                    palette.tertiary
+                },
+            );
+            if entry.is_dir {
+                surface.draw_text(
+                    row.right() - 16,
+                    row.y + 8,
+                    ">",
+                    SMALL,
+                    if index == self.selected {
+                        Color::rgb(255, 255, 255)
+                    } else {
+                        palette.tertiary
+                    },
+                );
             }
-
             y += row_height;
         }
 
@@ -1219,74 +1896,199 @@ impl FilesApp {
             Rect::new(list.x, list.bottom() - 21, list.w, 1),
             palette.hairline,
         );
-
-        surface.draw_text(
+        let status = if !self.search.is_empty() {
+            format!(
+                "{} ({} of {} items)",
+                self.status,
+                self.entries.len(),
+                self.all_entries.len()
+            )
+        } else {
+            self.status.clone()
+        };
+        ui::draw_text_truncated(
+            surface,
             list.x + 10,
             list.bottom() - 17,
-            &self.status,
+            &status,
             CAPTION,
             palette.tertiary,
+            list.w - 20,
         );
+
+        if self.search_focus && (sys::time_ms() / 500) % 2 == 0 {
+            let caret = search.x
+                + 8
+                + surface.text_width(
+                    &ui::truncate(surface, &self.search, CAPTION, search.w - 16),
+                    CAPTION,
+                )
+                + 1;
+            surface.fill_rect(Rect::new(caret, search.y + 5, 2, 14), theme.accent_color());
+        }
+
+        if let Some(lines) = &self.info {
+            surface.fill_rect(content, Color::rgba(0, 0, 0, 60));
+            let card = Rect::new(
+                content.x + (content.w - 420) / 2,
+                content.y + (content.h - 230) / 2,
+                420,
+                230,
+            );
+            surface.fill_rounded(card, 14, palette.surface);
+            surface.stroke_rounded(card, 14, 1, palette.hairline);
+            surface.draw_text(card.x + 20, card.y + 16, "Information", TITLE, palette.text);
+            let mut line_y = card.y + 52;
+            for (index, line) in lines.iter().enumerate() {
+                surface.draw_text(
+                    card.x + 20,
+                    line_y,
+                    line,
+                    if index == 0 { BODY_MEDIUM } else { BODY },
+                    if index == 0 {
+                        palette.text
+                    } else {
+                        palette.secondary
+                    },
+                );
+                line_y += 22;
+            }
+        }
+
+        if let Some(buffer) = &self.rename {
+            surface.fill_rect(content, Color::rgba(0, 0, 0, 60));
+            let card = Rect::new(
+                content.x + (content.w - 380) / 2,
+                content.y + (content.h - 130) / 2,
+                380,
+                130,
+            );
+            surface.fill_rounded(card, 14, palette.surface);
+            surface.stroke_rounded(card, 14, 1, palette.hairline);
+            surface.draw_text(card.x + 20, card.y + 16, "Rename", TITLE, palette.text);
+            let field = Rect::new(card.x + 20, card.y + 54, card.w - 40, 28);
+            surface.fill_rounded(field, 7, palette.elevated);
+            surface.stroke_rounded(field, 7, 1, theme.accent_color());
+            ui::draw_text_truncated(
+                surface,
+                field.x + 8,
+                field.y + 5,
+                buffer,
+                BODY,
+                palette.text,
+                field.w - 16,
+            );
+            surface.draw_text(
+                card.x + 20,
+                card.y + 92,
+                "Enter to rename - Esc to cancel",
+                CAPTION,
+                palette.tertiary,
+            );
+        }
     }
 
     fn mouse(&mut self, x: i32, y: i32, content: Rect) -> Option<Action> {
         let (lx, ly) = local(content, x, y);
 
+        if self.info.is_some() {
+            self.info = None;
+            return None;
+        }
+        if self.rename.is_some() {
+            // Clicking outside the modal cancels; inside keeps editing.
+            if lx < (content.w - 380) / 2 || lx > (content.w + 380) / 2 {
+                self.rename = None;
+            }
+            return None;
+        }
+
         if lx < 176 {
             let places = [
                 "/home/user",
                 "/home/user/DOCS",
+                "/home/user/DOWNLOADS",
+                "/home/user/DESKTOP",
                 "/home/user/NOTES",
                 "/system",
                 "/var/log",
                 "/",
             ];
-
             let index = ((ly - 16) / 32).max(0) as usize;
-
             if ly >= 16 && index < places.len() {
                 self.navigate(places[index].to_string());
             }
-
             return None;
         }
 
-        if ly < 44 {
-            if lx >= 10 && lx < 36 {
-                if let Some(previous) = self.back.pop() {
-                    self.path = previous;
+        let toolbar = Rect::new(176, 0, content.w - 176, 72);
 
-                    self.reload();
+        if ly < 36 {
+            for index in 0..4i32 {
+                let rect = Rect::new(10 + index * 32, 8, 26, 24);
+                if rect.contains(lx, ly) {
+                    match index {
+                        0 => self.go_back(),
+                        1 => self.go_forward(),
+                        2 => {
+                            if self.path != "/" {
+                                self.navigate(parent_path(&self.path));
+                            }
+                        }
+                        _ => self.reload(),
+                    }
+                    return None;
                 }
-            } else if lx >= 42 && lx < 68 {
-                if self.path != "/" {
-                    let parent = self
-                        .path
-                        .rsplit_once('/')
-                        .map(|(p, _)| if p.is_empty() { "/" } else { p })
-                        .unwrap_or("/")
-                        .to_string();
-
-                    self.navigate(parent);
-                }
-            } else if lx >= 74 && lx < 100 {
-                self.reload();
             }
-
+            for (rect, path) in &self.breadcrumb_hits {
+                if rect.contains(lx, ly) {
+                    self.navigate(path.clone());
+                    return None;
+                }
+            }
             return None;
         }
 
-        let index = self.scroll + ((ly - 44 - 4) / 32).max(0) as usize;
+        if ly < 72 {
+            for index in 0..FILE_ACTIONS.len() {
+                let rect = Self::action_rect(toolbar, index);
+                if rect.w == 0 || !rect.contains(lx, ly) {
+                    continue;
+                }
+                match index {
+                    0 => self.create_folder(),
+                    1 => self.delete_selected(),
+                    2 => self.begin_rename(),
+                    3 => self.show_info(),
+                    4 => self.copy_selected(false),
+                    5 => self.copy_selected(true),
+                    6 => self.paste(),
+                    7 => self.cycle_sort(),
+                    _ => {}
+                }
+                return None;
+            }
+            let search = Self::search_rect(toolbar);
+            if search.contains(lx, ly) {
+                self.search_focus = true;
+                self.confirm_delete = false;
+                return None;
+            }
+            self.search_focus = false;
+            return None;
+        }
 
+        self.search_focus = false;
+
+        let list_top = 72;
+        let index = self.scroll + ((ly - list_top - 4) / 32).max(0) as usize;
         if index < self.entries.len() {
             let now = sys::time_ms();
-
             if self.selected == index && now.saturating_sub(self.last_click.1) < 450 {
                 return self.open_selected();
             }
-
             self.selected = index;
-
+            self.confirm_delete = false;
             self.last_click = (index, now);
         }
 
@@ -1298,32 +2100,103 @@ impl FilesApp {
             return None;
         }
 
+        if self.info.is_some() {
+            self.info = None;
+            return None;
+        }
+
+        if let Some(buffer) = &mut self.rename {
+            match event.code {
+                keys::ENTER => self.commit_rename(),
+                keys::ESC => self.rename = None,
+                keys::BACKSPACE => {
+                    buffer.pop();
+                }
+                code if code >= 32 && code < 127 => {
+                    if buffer.len() < 48 {
+                        buffer.push(code as u8 as char);
+                    }
+                }
+                _ => {}
+            }
+            return None;
+        }
+
+        if self.search_focus {
+            match event.code {
+                keys::BACKSPACE => {
+                    self.search.pop();
+                    self.apply_filter();
+                }
+                keys::ESC => self.search_focus = false,
+                keys::ENTER => self.search_focus = false,
+                code if code >= 32 && code < 127 => {
+                    if self.search.len() < 32 {
+                        self.search.push(code as u8 as char);
+                        self.apply_filter();
+                    }
+                }
+                _ => {}
+            }
+            return None;
+        }
+
+        if event.mods & mods::CTRL != 0 {
+            match event.code {
+                code if code == 'n' as u32 => {
+                    self.create_folder();
+                    return None;
+                }
+                code if code == 'c' as u32 => {
+                    self.copy_selected(false);
+                    return None;
+                }
+                code if code == 'x' as u32 => {
+                    self.copy_selected(true);
+                    return None;
+                }
+                code if code == 'v' as u32 => {
+                    self.paste();
+                    return None;
+                }
+                code if code == 'i' as u32 => {
+                    self.show_info();
+                    return None;
+                }
+                code if code == 'f' as u32 => {
+                    self.search_focus = true;
+                    return None;
+                }
+                code if code == 'r' as u32 => {
+                    self.reload();
+                    return None;
+                }
+                _ => {}
+            }
+        }
+
         match event.code {
             keys::DOWN => {
                 if self.selected + 1 < self.entries.len() {
                     self.selected += 1;
                 }
             }
-
             keys::UP => {
                 self.selected = self.selected.saturating_sub(1);
             }
-
             keys::ENTER => return self.open_selected(),
-
             keys::BACKSPACE => {
                 if self.path != "/" {
-                    let parent = self
-                        .path
-                        .rsplit_once('/')
-                        .map(|(p, _)| if p.is_empty() { "/" } else { p })
-                        .unwrap_or("/")
-                        .to_string();
-
-                    self.navigate(parent);
+                    self.navigate(parent_path(&self.path));
                 }
             }
-
+            keys::DELETE => self.delete_selected(),
+            keys::F2 => self.begin_rename(),
+            keys::ESC => {
+                self.confirm_delete = false;
+                self.search.clear();
+                self.apply_filter();
+            }
             _ => {}
         }
 
@@ -1341,6 +2214,10 @@ pub struct SettingsApp {
     section: usize,
 
     drag_brightness: bool,
+
+    storage_rows: Vec<(String, String)>,
+
+    storage_updated: u64,
 }
 
 const SECTIONS: [(&str, Icon); 10] = [
@@ -1362,6 +2239,88 @@ impl SettingsApp {
             section: 0,
 
             drag_brightness: false,
+
+            storage_rows: Vec::new(),
+
+            storage_updated: 0,
+        }
+    }
+
+    fn refresh_storage(&mut self) {
+        self.storage_rows.clear();
+        self.storage_updated = sys::time_ms();
+
+        let Some(details) = sys::storage_details() else {
+            self.storage_rows
+                .push(("Storage".to_string(), "Unavailable".to_string()));
+            return;
+        };
+
+        if details.mounted == 0 {
+            self.storage_rows
+                .push(("Home volume".to_string(), "Memory only".to_string()));
+            self.storage_rows
+                .push(("Data disk".to_string(), "Not attached".to_string()));
+            self.storage_rows
+                .push(("Durability".to_string(), "Lost on shutdown".to_string()));
+            return;
+        }
+
+        let mib = |bytes: u64| format!("{:.1} MiB", bytes as f64 / 1048576.0);
+        let label = core::str::from_utf8(&details.label)
+            .unwrap_or("?")
+            .trim_end_matches('\0')
+            .to_string();
+
+        self.storage_rows
+            .push(("Mount".to_string(), "/home/user".to_string()));
+        self.storage_rows.push((
+            "Filesystem".to_string(),
+            if details.filesystem == 1 {
+                format!("FAT32 ({})", label)
+            } else {
+                "Unknown".to_string()
+            },
+        ));
+        self.storage_rows.push((
+            "Device".to_string(),
+            format!("AHCI disk {}", details.device),
+        ));
+        self.storage_rows
+            .push(("Capacity".to_string(), mib(details.total_bytes)));
+        self.storage_rows.push((
+            "Used".to_string(),
+            mib(details.total_bytes.saturating_sub(details.free_bytes)),
+        ));
+        self.storage_rows
+            .push(("Free".to_string(), mib(details.free_bytes)));
+        self.storage_rows.push((
+            "Partition".to_string(),
+            format!(
+                "LBA {} ({} MiB)",
+                details.partition_start,
+                details.partition_sectors * 512 / (1024 * 1024)
+            ),
+        ));
+        self.storage_rows.push((
+            "I/O since boot".to_string(),
+            format!(
+                "{} KiB read, {} KiB written",
+                details.sectors_read / 2,
+                details.sectors_written / 2
+            ),
+        ));
+        self.storage_rows.push((
+            "Durability".to_string(),
+            "Synchronous, no journal".to_string(),
+        ));
+        self.storage_rows.push((
+            "Settings file".to_string(),
+            "Versioned v1 with backup".to_string(),
+        ));
+        if details.healthy == 0 {
+            self.storage_rows
+                .push(("Health".to_string(), "Metadata unreadable".to_string()));
         }
     }
 
@@ -1630,48 +2589,16 @@ impl SettingsApp {
 
             7 => {
 
-                match sys::storage_info() {
+                let now = sys::time_ms();
 
-                    Some(info) if info.mounted != 0 => {
+                if self.storage_rows.is_empty()
+                    || now.saturating_sub(self.storage_updated) > 900
+                {
+                    self.refresh_storage();
+                }
 
-                        self.info_row(surface, x, &mut cy, width, theme, "Home volume", "FAT32 on the data disk");
-
-                        self.info_row(
-                            surface,
-                            x,
-                            &mut cy,
-                            width,
-                            theme,
-                            "Capacity",
-                            &format!("{:.1} MiB", info.total_bytes as f64 / (1024.0 * 1024.0)),
-                        );
-
-                        self.info_row(
-                            surface,
-                            x,
-                            &mut cy,
-                            width,
-                            theme,
-                            "Free",
-                            &format!("{:.1} MiB", info.free_bytes as f64 / (1024.0 * 1024.0)),
-                        );
-
-                        self.info_row(surface, x, &mut cy, width, theme, "Boot disk", "Read only");
-
-                        self.info_row(surface, x, &mut cy, width, theme, "Durability", "No journal");
-
-                    }
-
-                    _ => {
-
-                        self.info_row(surface, x, &mut cy, width, theme, "Home volume", "Memory only");
-
-                        self.info_row(surface, x, &mut cy, width, theme, "Data disk", "Not attached");
-
-                        self.info_row(surface, x, &mut cy, width, theme, "Durability", "Lost on shutdown");
-
-                    }
-
+                for (label, value) in &self.storage_rows {
+                    self.info_row(surface, x, &mut cy, width, theme, label, value);
                 }
 
                 if let Some(info) = sys::system_info() {
@@ -1748,11 +2675,11 @@ impl SettingsApp {
 
                 cy += logo_card.h + 18;
 
-                surface.draw_text(x, cy, "Aster OS 0.2.0", HEADLINE, palette.text);
+                surface.draw_text(x, cy, "Aster OS 0.3.0", HEADLINE, palette.text);
 
                 cy += 36;
 
-                self.info_row(surface, x, &mut cy, width, theme, "Kernel", "aster 0.2.0 (higher half, x86_64)");
+                self.info_row(surface, x, &mut cy, width, theme, "Kernel", "aster 0.3.0 (higher half, x86_64)");
 
                 self.info_row(surface, x, &mut cy, width, theme, "ABI", "Aster ABI 1");
 
@@ -2359,6 +3286,14 @@ pub struct MonitorApp {
 
     activity: Vec<f32>,
 
+    storage: Option<StorageDetails>,
+
+    logs: [u8; 3072],
+
+    log_len: usize,
+
+    view_logs: bool,
+
     last_update: u64,
 
     last_switches: u64,
@@ -2376,6 +3311,14 @@ impl MonitorApp {
             memory: vec![0.0; 80],
 
             activity: vec![0.0; 80],
+
+            storage: None,
+
+            logs: [0; 3072],
+
+            log_len: 0,
+
+            view_logs: false,
 
             last_update: 0,
 
@@ -2442,6 +3385,12 @@ impl MonitorApp {
         self.processes.clear();
 
         self.processes.extend_from_slice(&buffer[..count]);
+
+        self.storage = sys::storage_details();
+
+        let logged = sys::log_read(&mut self.logs);
+
+        self.log_len = if logged > 0 { logged as usize } else { 0 };
     }
 
     fn draw(&mut self, surface: &mut Surface, content: Rect, theme: &Theme) {
@@ -2484,9 +3433,40 @@ impl MonitorApp {
                     .map(|i| format!("{}", i.context_switches))
                     .unwrap_or("-".into()),
             ),
+            (
+                "Storage",
+                self.storage
+                    .map(|details| {
+                        if details.mounted != 0 && details.total_bytes > 0 {
+                            format!(
+                                "{}%",
+                                details
+                                    .total_bytes
+                                    .saturating_sub(details.free_bytes)
+                                    .saturating_mul(100)
+                                    / details.total_bytes
+                            )
+                        } else {
+                            "-".to_string()
+                        }
+                    })
+                    .unwrap_or_else(|| "-".to_string()),
+            ),
+            (
+                "Disk free",
+                self.storage
+                    .map(|details| {
+                        if details.mounted != 0 {
+                            format!("{} MiB", details.free_bytes / (1024 * 1024))
+                        } else {
+                            "-".to_string()
+                        }
+                    })
+                    .unwrap_or_else(|| "-".to_string()),
+            ),
         ];
 
-        let card_w = (content.w - 40 - 36) / 4;
+        let card_w = (content.w - 40 - 5 * 12) / 6;
 
         for (index, (label, value)) in cards.iter().enumerate() {
             let rect = Rect::new(x + index as i32 * (card_w + 12), y, card_w, 64);
@@ -2552,8 +3532,69 @@ impl MonitorApp {
             table.y + 10,
             "Processes",
             BODY_MEDIUM,
-            palette.text,
+            if self.view_logs {
+                palette.secondary
+            } else {
+                palette.text
+            },
         );
+
+        surface.draw_text(
+            table.x + 112,
+            table.y + 10,
+            "Logs",
+            BODY_MEDIUM,
+            if self.view_logs {
+                palette.text
+            } else {
+                palette.secondary
+            },
+        );
+
+        if self.view_logs {
+            let mut starts = [0usize; 48];
+            let mut ends = [0usize; 48];
+            let mut lines = 0usize;
+            let mut line_start = 0usize;
+            for (index, byte) in self.logs[..self.log_len].iter().enumerate() {
+                if *byte == b'\n' {
+                    if lines < starts.len() {
+                        starts[lines] = line_start;
+                        ends[lines] = index;
+                        lines += 1;
+                    }
+                    line_start = index + 1;
+                }
+            }
+            if line_start < self.log_len && lines < starts.len() {
+                starts[lines] = line_start;
+                ends[lines] = self.log_len;
+                lines += 1;
+            }
+            let first = lines.saturating_sub(16);
+            let mut line_y = table.y + 36;
+            for index in first..lines {
+                if line_y > table.bottom() - 18 {
+                    break;
+                }
+                let bytes = &self.logs[starts[index]..ends[index]];
+                if let Ok(text) = core::str::from_utf8(bytes) {
+                    if !text.is_empty() {
+                        ui::draw_text_truncated(
+                            surface,
+                            table.x + 12,
+                            line_y,
+                            text,
+                            MONO,
+                            palette.secondary,
+                            table.w - 24,
+                        );
+                    }
+                }
+                line_y += 16;
+            }
+            return;
+        }
 
         let mut row_y = table.y + 36;
 
@@ -2590,14 +3631,43 @@ impl MonitorApp {
                 palette.text,
             );
 
-            surface.draw_text(table.x + 170, row_y, name, BODY, palette.text);
+            ui::draw_text_truncated(
+                surface,
+                table.x + 170,
+                row_y,
+                name,
+                BODY,
+                palette.text,
+                table.w - 200,
+            );
 
-            surface.fill_circle(table.right() - 24, row_y + 7, 3, SUCCESS);
+            surface.fill_circle(
+                table.right() - 24,
+                row_y + 7,
+                3,
+                if process.state == 0 { SUCCESS } else { WARNING },
+            );
 
             row_y += 24;
         }
     }
+
+    fn mouse(&mut self, x: i32, y: i32, content: Rect) -> Option<Action> {
+        let (mx, my) = local(content, x, y);
+        // The table begins after the title, cards and the two graphs.
+        let table_y = 18 + 30 + 80 + 130 + 16;
+        if my >= table_y + 4 && my <= table_y + 30 {
+            if mx >= 12 && mx <= 104 {
+                self.view_logs = false;
+            } else if mx >= 112 && mx <= 160 {
+                self.view_logs = true;
+            }
+        }
+        None
+    }
 }
+
+// ===========================================================================
 
 // ===========================================================================
 
@@ -3099,6 +4169,7 @@ impl NotesApp {
 
             self.dirty = true;
 
+            sys::log(format!("notes: created {}", name).as_bytes());
             self.status = format!("Created {}", name);
         }
 

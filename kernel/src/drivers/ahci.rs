@@ -41,6 +41,7 @@ const FIS_TYPE_H2D: u8 = 0x27;
 const ATA_IDENTIFY: u8 = 0xEC;
 const ATA_READ_DMA_EXT: u8 = 0x25;
 const ATA_WRITE_DMA_EXT: u8 = 0x35;
+const ATA_FLUSH_CACHE_EXT: u8 = 0xEA;
 
 const WAIT_SPINS: usize = 2_000_000;
 
@@ -52,6 +53,7 @@ struct Disk {
     ct: u64,
     buf: u64,
     sectors: u64,
+    model: [u8; 40],
 }
 
 impl Disk {
@@ -108,6 +110,10 @@ impl Disk {
         self.set_reg(PORT_CI, 1);
         fence(Ordering::SeqCst);
 
+        self.wait_completion(command)
+    }
+
+    fn wait_completion(&self, command: u8) -> Result<(), &'static str> {
         let mut completed = false;
         for _ in 0..WAIT_SPINS {
             if self.reg(PORT_CI) & 1 == 0 {
@@ -145,6 +151,32 @@ impl Disk {
             return Err("AHCI command failed");
         }
         Ok(())
+    }
+
+    /// FLUSH CACHE EXT: no data stage and no PRDT entry.
+    fn flush(&self) -> Result<(), &'static str> {
+        let table = unsafe { core::slice::from_raw_parts_mut(vmm::hhdm(self.ct) as *mut u8, 256) };
+        for byte in table.iter_mut() {
+            *byte = 0;
+        }
+        table[0] = FIS_TYPE_H2D;
+        table[1] = 0x80;
+        table[2] = ATA_FLUSH_CACHE_EXT;
+        table[7] = 0x40;
+
+        let header = unsafe { core::slice::from_raw_parts_mut(vmm::hhdm(self.clb) as *mut u32, 8) };
+        for word in header.iter_mut() {
+            *word = 0;
+        }
+        header[0] = 5;
+        header[2] = self.ct as u32;
+        header[3] = (self.ct >> 32) as u32;
+
+        fence(Ordering::SeqCst);
+        self.set_reg(PORT_IS, 0xFFFF_FFFF);
+        self.set_reg(PORT_CI, 1);
+        fence(Ordering::SeqCst);
+        self.wait_completion(ATA_FLUSH_CACHE_EXT)
     }
 
     fn read_sector(&self, lba: u64, out: &mut [u8; 512]) -> Result<(), &'static str> {
@@ -223,6 +255,7 @@ fn identify(regs: u64, clb: u64, fis: u64, ct: u64, buf: u64, port: u8) -> Optio
         ct,
         buf,
         sectors: 0,
+        model: [0; 40],
     };
     if disk.issue(ATA_IDENTIFY, 0, 0, false).is_err() {
         return None;
@@ -354,6 +387,7 @@ pub fn init() -> bool {
                     ct,
                     buf,
                     sectors,
+                    model,
                 });
             }
             None => {
@@ -387,6 +421,23 @@ pub fn disk_sectors(index: usize) -> u64 {
         .and_then(|controller| controller.disks.get(index))
         .map(|disk| disk.sectors)
         .unwrap_or(0)
+}
+
+pub fn disk_info(index: usize) -> Option<(u8, u64, [u8; 40])> {
+    CONTROLLER
+        .lock()
+        .as_ref()
+        .and_then(|controller| controller.disks.get(index))
+        .map(|disk| (disk.port, disk.sectors, disk.model))
+}
+
+pub fn flush_disk(index: usize) -> Result<(), &'static str> {
+    let controller = CONTROLLER.lock();
+    let disk = controller
+        .as_ref()
+        .and_then(|controller| controller.disks.get(index))
+        .ok_or("no such disk")?;
+    disk.flush()
 }
 
 pub fn read_sector(index: usize, lba: u64, out: &mut [u8; 512]) -> Result<(), &'static str> {

@@ -25,7 +25,7 @@ DATA = OUT / "data.img"
 SEEDS = dict(SEED_FILES)
 PAYLOAD = "hello-from-first-boot"
 SETTINGS_AFTER = (
-    b"theme=light\naccent=green\nanimations=1.00\n"
+    b"version=1\naccent=green\nanimations=1.00\n"
     b"wallpaper=0\nreduce_motion=0\nbrightness=1.00\n"
 )
 
@@ -107,6 +107,10 @@ def second_boot(qmp: Qmp) -> None:
 def check_volume(stage: str, settings: bytes) -> bool:
     expected = dict(SEEDS)
     expected["/SETTINGS.CNF"] = settings
+    expected["/SETTINGS.BAK"] = (
+        b"version=1\naccent=blue\nanimations=1.00\n"
+        b"wallpaper=0\nreduce_motion=0\nbrightness=1.00\n"
+    )
     expected["/PERSIST.TXT"] = PAYLOAD.encode()
     problems = verify_image(str(DATA), expected)
     bad = [line for line in problems if not line.startswith("ok ")]

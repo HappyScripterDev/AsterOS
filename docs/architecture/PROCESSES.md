@@ -1,9 +1,9 @@
 # Processes and Isolation
 
-Status: **M2 core shipped** (2026-11-20). Independent ring-3 processes can be
-spawned from user space, waited for, and killed by faults without taking down
-the desktop. The built-in apps still share the desktop process; extracting them
-is a later milestone.
+Status: **0.3.0** (2026-11-20). Independent ring-3 processes can be spawned,
+waited for, and killed by faults without taking down the desktop. `configd` is
+a long-lived child supervised by the desktop. The built-in apps still share the
+desktop process; extracting them is a later milestone.
 
 ## 1. Address spaces
 
@@ -60,7 +60,10 @@ writes to a kernel address to exercise this path.
   exhausted. A quota is planned for M5.
 - No `KILL`; processes exit themselves or fault.
 - No `argv`/environment; children start with an empty stack.
-- No inheritance of file descriptors or handles.
+- No inheritance of file descriptors or handles; `SPAWN` passes exactly one
+  bootstrap channel handle to the child.
+- `configd` is restarted by the desktop supervisor; there is no `KILL` for a
+  hung child.
 - `WAIT` blocks the calling thread. The desktop has one UI thread, so a long
   child freezes the shell until it exits; the probe commands are short. An
   asynchronous event/service API is required before apps use blocking waits.

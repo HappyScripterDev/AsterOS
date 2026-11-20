@@ -25,7 +25,7 @@ The loader passes `BootInfo` in `rdi` as a direct-map virtual address.
 4. GDT/TSS, IDT, PIC remap, PIT start, SSE enable,
 5. PMM -> VMM -> heap,
 6. heap self-test and memory self-tests,
-7. storage init (PCI/AHCI, GPT, FAT32 mount + read/write self-test),
+7. block layer + AHCI, GPT, mount table and FAT32 mount + self-tests,
 8. ramfs init + self-test,
 9. scheduler init (idle thread), PS/2 init,
 10. load `/DESK` as PID 1, `sched::start()` (never returns),
@@ -194,7 +194,9 @@ Implemented calls and semantics are listed in
   write-only access and NX.
 - `READDIR` packs `DirEntry` records; the caller provides the entry count.
 - `EXIT` marks the thread dead and schedules away permanently.
-- `STORAGE_INFO` reports the persistent volume's mount state and capacity.
+- `STORAGE_INFO`/`STORAGE_DETAILS` report mount state, device, filesystem,
+  capacity and I/O counters.
+- `RENAME`, `SYNC` and `LOG_READ` support Files, durable settings and Monitor.
 - `SHUTDOWN` uses the QEMU ACPI poweroff ports; there is no ACPI driver yet.
 
 `SPAWN`, `WAIT`, IPC channel calls, and `SET_THEME` are reserved in the ABI but
@@ -220,6 +222,7 @@ not yet exposed to user space.
 - No `SMEP`/`SMAP`/`UMIP` enablement yet, so the kernel could be tricked into
   executing user pages if a kernel pointer bug existed.
 - The FAT32 home uses 8.3 names, has no journal, and is world-writable. System
-  files stay on the volatile ramfs.
+  files stay on the volatile ramfs. The desktop supervises configd over IPC;
+  there is no generic service manager or KILL yet.
 - Process teardown is still tied to the next scheduler switch; there is no
   zombie/wait model yet (M2).

@@ -17,16 +17,17 @@ use crate::sync::IrqLock;
 const FAT_TAG: u64 = fat32::MOUNT_TAG;
 
 fn fat_relative(path: &str) -> Option<&str> {
-    if !fat32::mounted() {
+    let (kind, prefix) = crate::mount::resolve(path)?;
+    if kind != crate::mount::FsKind::Fat32 {
         return None;
     }
-    if path == "/home/user" {
-        return Some("/");
+    if prefix == 0 {
+        Some(path)
+    } else if prefix >= path.len() {
+        Some("/")
+    } else {
+        Some(&path[prefix..])
     }
-    // Keep the leading slash: the FAT layer resolves absolute paths such as
-    // "/NOTES/IDEAS.TXT" relative to the mount root.
-    path.strip_prefix("/home/user")
-        .filter(|rest| rest.starts_with('/'))
 }
 
 fn fat_native(inode: u64) -> Option<u64> {
@@ -242,7 +243,7 @@ pub fn init() {
         ),
         (
             "/system/version",
-            "Aster OS 0.2.0 (core milestone)\nkernel: aster 0.2.0\nabi: 1\n",
+            "Aster OS 0.3.0 (storage and services)\nkernel: aster 0.3.0\nabi: 1\n",
         ),
         (
             "/var/log/boot.log",
@@ -280,7 +281,25 @@ fn errno_value(code: i64) -> i64 {
     code
 }
 
+fn validate_open_flags(flags: u32) -> Result<(), i64> {
+    const KNOWN: u32 = aster_abi::open_flags::READ
+        | aster_abi::open_flags::WRITE
+        | aster_abi::open_flags::CREATE
+        | aster_abi::open_flags::TRUNC
+        | aster_abi::open_flags::DIRECTORY;
+    if flags & !KNOWN != 0
+        || flags & (aster_abi::open_flags::READ | aster_abi::open_flags::WRITE) == 0
+    {
+        return Err(crate::syscall::errno::EINVAL);
+    }
+    if flags & aster_abi::open_flags::TRUNC != 0 && flags & aster_abi::open_flags::WRITE == 0 {
+        return Err(crate::syscall::errno::EINVAL);
+    }
+    Ok(())
+}
+
 pub fn open(path: &str, flags: u32) -> Result<u64, i64> {
+    validate_open_flags(flags)?;
     if let Some(relative) = fat_relative(path) {
         return fat32::open(relative, flags).map(tagged);
     }
@@ -482,6 +501,55 @@ pub fn unlink(path: &str) -> Result<(), i64> {
     }
     fs.unlink_recursive(id);
     Ok(())
+}
+
+pub fn rename(old_path: &str, new_path: &str) -> Result<(), i64> {
+    let old_is_fat = fat_relative(old_path).is_some();
+    let new_is_fat = fat_relative(new_path).is_some();
+    if old_is_fat != new_is_fat {
+        return Err(crate::syscall::errno::EXDEV);
+    }
+    if old_is_fat {
+        let old_relative = fat_relative(old_path).unwrap();
+        let new_relative = fat_relative(new_path).unwrap();
+        return fat32::rename(old_relative, new_relative);
+    }
+
+    let mut fs = FS.lock();
+    let id = fs.resolve(old_path)?;
+    if id == fs.root() {
+        return Err(crate::syscall::errno::EPERM);
+    }
+    let (old_parent, _) = fs.resolve_parent(old_path)?;
+    let (new_parent, new_name) = fs.resolve_parent(new_path)?;
+    if old_parent != new_parent {
+        // Cross-directory move is not atomic on ramfs yet; callers copy and
+        // delete instead. Keeping this explicit avoids half-renamed trees.
+        return Err(crate::syscall::errno::EINVAL);
+    }
+    let duplicate = fs
+        .node(new_parent)
+        .map(|parent| {
+            parent.children.iter().any(|&child| {
+                child != id
+                    && fs
+                        .node(child)
+                        .map(|node| node.name == new_name)
+                        .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false);
+    if duplicate {
+        return Err(crate::syscall::errno::EEXIST);
+    }
+    let node = fs.node_mut(id).ok_or(crate::syscall::errno::ENOENT)?;
+    node.name = new_name.to_string();
+    node.modified_ms = crate::time::uptime_ms();
+    Ok(())
+}
+
+pub fn sync() -> i64 {
+    crate::storage::sync()
 }
 
 pub fn read_whole(path: &str) -> Option<Vec<u8>> {

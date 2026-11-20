@@ -418,13 +418,18 @@ pub fn process_by_pid(pid: u64) -> *mut Process {
 
 /// Block the current thread until an event wakes it. Used by IPC and WAIT.
 pub fn block_current() {
+    block_current_until(u64::MAX);
+}
+
+/// Block until an event or the given uptime deadline, whichever comes first.
+pub fn block_current_until(wake_at: u64) {
     let thread = current_thread();
     if thread.is_null() {
         return;
     }
     unsafe {
         (*thread).state = ThreadState::Blocked;
-        (*thread).wake_at = u64::MAX;
+        (*thread).wake_at = wake_at;
     }
     schedule();
 }

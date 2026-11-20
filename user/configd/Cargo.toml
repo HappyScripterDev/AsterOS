@@ -1,0 +1,9 @@
+[package]
+name = "configd"
+version = "0.3.0"
+edition = "2021"
+description = "Aster OS settings service"
+
+[[bin]]
+name = "configd"
+path = "src/main.rs"

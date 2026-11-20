@@ -107,6 +107,7 @@ def build(clean: bool = False, modules: bool = True, desktop: bool = True, fresh
             ("isoprobe", "ISOPROBE.ELF"),
             ("faultprobe", "FAULTPRB.ELF"),
             ("ipcprobe", "IPCPROBE.ELF"),
+            ("configd", "CONFIGD.ELF"),
         ):
             cargo_build(package, KERNEL_TARGET)
             probe = artifact(package, KERNEL_TARGET, package)

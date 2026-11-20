@@ -39,6 +39,9 @@ unsafe fn syscall(number: u64, a: u64, b: u64, c: u64) -> i64 {
         in("rdi") a,
         in("rsi") b,
         in("rdx") c,
+        in("r10") 0u64,
+        in("r8") 0u64,
+        in("r9") 0u64,
         options(nostack)
     );
     result

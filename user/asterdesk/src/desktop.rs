@@ -26,6 +26,9 @@ use crate::gfx::{self, Color, FloatMath, Rect, Surface};
 
 use crate::logo_data;
 
+use crate::services;
+use crate::settings;
+
 use crate::sys;
 
 use crate::theme::{self, Theme, DOCK_GAP, DOCK_HEIGHT, TOP_BAR_HEIGHT};
@@ -209,6 +212,8 @@ pub struct Desktop {
     frames: u64,
 
     frame_accum: u64,
+
+    services: services::Manager,
 }
 
 impl Desktop {
@@ -279,7 +284,11 @@ impl Desktop {
             frames: 0,
 
             frame_accum: 0,
+
+            services: services::Manager::new(),
         };
+
+        desktop.services.start();
 
         desktop.load_preferences();
 
@@ -377,44 +386,64 @@ impl Desktop {
     }
 
     fn load_preferences(&mut self) {
-        let Some(data) = sys::read_file("/home/user/SETTINGS.CNF") else {
-            return;
-        };
-
-        let text = String::from_utf8_lossy(&data);
-
-        for line in text.lines() {
-            let Some((key, value)) = line.split_once('=') else {
-                continue;
-            };
-
-            match key.trim() {
-                "accent" => {
-                    let names: Vec<String> = theme::ACCENTS
-                        .iter()
-                        .map(|a| a.name.to_lowercase())
-                        .collect();
-
-                    let wanted = value.trim().to_lowercase();
-
-                    if let Some(index) = names.iter().position(|name| name == &wanted) {
-                        self.theme.accent_index = index;
+        // Prefer the settings service; fall back to direct file I/O when it is
+        // unavailable so a service failure cannot lock the user out.
+        let mut service_buffer = [0u8; 256];
+        if let Some(length) = self.services.get_settings(&mut service_buffer) {
+            if let Ok(text) = core::str::from_utf8(&service_buffer[..length]) {
+                let loaded = settings::parse(text);
+                if !loaded.corrupt {
+                    loaded.settings.apply_to(&mut self.theme);
+                    self.saved_theme = Some(self.theme);
+                    if loaded.needs_save {
+                        self.saved_theme = None;
+                        self.save_preferences();
                     }
+                    return;
                 }
-
-                "animations" => self.theme.animation_speed = value.trim().parse().unwrap_or(1.0),
-
-                "reduce_motion" => self.theme.reduce_motion = value.trim() == "1",
-
-                "wallpaper" => self.theme.wallpaper = value.trim().parse().unwrap_or(0),
-
-                "brightness" => self.theme.brightness = value.trim().parse().unwrap_or(1.0),
-
-                _ => {}
             }
         }
 
-        self.saved_theme = Some(self.theme);
+        let mut data = sys::read_file(settings::PATH);
+        let mut from_backup = false;
+        if data.is_none() {
+            data = sys::read_file(settings::BACKUP);
+            from_backup = data.is_some();
+        }
+        let Some(bytes) = data else {
+            // No settings yet: write a complete, versioned default file.
+            self.saved_theme = None;
+            self.save_preferences();
+            return;
+        };
+
+        let Ok(text) = core::str::from_utf8(&bytes) else {
+            sys::log(b"settings: invalid UTF-8, restoring defaults\n");
+            let _ = sys::unlink(settings::BAD);
+            let _ = sys::rename(settings::PATH, settings::BAD);
+            self.theme = Theme::default();
+            self.saved_theme = None;
+            self.save_preferences();
+            return;
+        };
+
+        let loaded = settings::parse(text);
+        loaded.settings.apply_to(&mut self.theme);
+
+        if loaded.corrupt {
+            sys::log(b"settings: corrupt file, preserving it as SETTINGS.BAD\n");
+            let _ = sys::unlink(settings::BAD);
+            let _ = sys::rename(settings::PATH, settings::BAD);
+            self.theme = Theme::default();
+            self.saved_theme = None;
+            self.save_preferences();
+        } else if loaded.needs_save || from_backup {
+            // Migrate an older file or replace a recovered backup.
+            self.saved_theme = None;
+            self.save_preferences();
+        } else {
+            self.saved_theme = Some(self.theme);
+        }
     }
 
     fn save_preferences(&mut self) {
@@ -422,29 +451,44 @@ impl Desktop {
             return;
         }
 
-        let name = theme::ACCENTS[self.theme.accent_index.min(theme::ACCENTS.len() - 1)]
-            .name
-            .to_lowercase();
+        let content = settings::Settings::from_theme(&self.theme).serialize();
 
-        let content = format!(
+        if self.services.set_settings(&content) {
+            self.saved_theme = Some(self.theme);
+            return;
+        }
 
-            "theme=light\naccent={}\nanimations={:.2}\nwallpaper={}\nreduce_motion={}\nbrightness={:.2}\n",
+        sys::log(b"settings: service unavailable, using direct I/O\n");
 
-            name,
+        // Write a temporary file, flush it, keep the previous file as a
+        // backup, then rename the temporary file over the live one.
+        if !sys::write_file(settings::TEMP, content.as_bytes()) {
+            sys::log(b"settings: cannot write the temporary file\n");
+            return;
+        }
+        let _ = sys::sync();
 
-            self.theme.animation_speed,
+        if sys::stat(settings::PATH).is_some() {
+            let _ = sys::unlink(settings::BACKUP);
+            if sys::rename(settings::PATH, settings::BACKUP) < 0 {
+                sys::log(b"settings: backup rename failed\n");
+            }
+        }
 
-            self.theme.wallpaper,
+        let mut stored = sys::rename(settings::TEMP, settings::PATH) >= 0;
+        if !stored {
+            // Some FAT paths cannot rename; fall back to a direct write so the
+            // user still gets persistence, but log the weaker guarantee.
+            stored = sys::write_file(settings::PATH, content.as_bytes());
+            let _ = sys::unlink(settings::TEMP);
+        }
+        let _ = sys::sync();
 
-            if self.theme.reduce_motion { 1 } else { 0 },
-
-            self.theme.brightness
-
-        );
-
-        sys::write_file("/home/user/SETTINGS.CNF", content.as_bytes());
-
-        self.saved_theme = Some(self.theme);
+        if stored {
+            self.saved_theme = Some(self.theme);
+        } else {
+            sys::log(b"settings: save failed\n");
+        }
     }
 
     fn rebuild_wallpaper(&mut self) {
@@ -570,6 +614,8 @@ impl Desktop {
             let now = sys::time_ms();
 
             self.wm.tick(&self.theme);
+
+            self.services.tick();
 
             self.draw(now);
 
@@ -1193,6 +1239,11 @@ impl Desktop {
             }
 
             Action::SavePreferences => self.save_preferences(),
+
+            Action::RestartServices => {
+                self.services.restart();
+                self.notify("Services", "The settings service was restarted.");
+            }
         }
     }
 

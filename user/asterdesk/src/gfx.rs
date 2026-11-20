@@ -561,6 +561,17 @@ impl Surface {
         width
     }
 
+    #[inline]
+    pub fn char_width(&self, ch: char, face: usize) -> i32 {
+        let code = ch as u32;
+        if code < font_data::FIRST || code > font_data::LAST {
+            return 0;
+        }
+        let face = &font_data::FACES[face];
+        let index = face.first as usize + (code as usize - font_data::FIRST as usize);
+        font_data::GLYPHS[index].advance as i32
+    }
+
     pub fn draw_text(
         &mut self,
         x: i32,

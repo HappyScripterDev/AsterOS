@@ -193,6 +193,10 @@ pub mod sys {
     pub const PROC_LIST: u64 = 30;
     pub const STORAGE_INFO: u64 = 31;
     pub const CHANNEL_CLOSE: u64 = 32;
+    pub const STORAGE_DETAILS: u64 = 33;
+    pub const RENAME: u64 = 34;
+    pub const LOG_READ: u64 = 35;
+    pub const SYNC: u64 = 36;
 }
 
 /// Error codes returned in `rax` by system calls. Negative values are errors.
@@ -213,6 +217,7 @@ pub mod errno {
     pub const ESRCH: i64 = -13;
     pub const EPIPE: i64 = -14;
     pub const ETIMEDOUT: i64 = -15;
+    pub const EXDEV: i64 = -16;
     pub const ENOSYS: i64 = -38;
 }
 
@@ -366,4 +371,32 @@ pub struct StorageInfo {
     pub reserved: u32,
     pub total_bytes: u64,
     pub free_bytes: u64,
+}
+
+/// Extended storage view for Settings and Monitor.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct StorageDetails {
+    pub mounted: u32,
+    pub healthy: u32,
+    /// 1 = FAT32, 0 = none.
+    pub filesystem: u32,
+    pub read_only: u32,
+    pub sector_bytes: u32,
+    pub cluster_bytes: u32,
+    pub device: u32,
+    pub reserved: u32,
+    pub total_bytes: u64,
+    pub free_bytes: u64,
+    pub device_sectors: u64,
+    pub partition_start: u64,
+    pub partition_sectors: u64,
+    pub sectors_read: u64,
+    pub sectors_written: u64,
+    pub reads: u64,
+    pub writes: u64,
+    pub flushes: u64,
+    pub errors: u64,
+    pub label: [u8; 12],
+    pub reserved2: u32,
 }

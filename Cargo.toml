@@ -8,6 +8,7 @@ members = [
     "user/isoprobe",
     "user/faultprobe",
     "user/ipcprobe",
+    "user/configd",
 ]
 
 [profile.release]

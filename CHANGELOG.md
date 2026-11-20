@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0 - Storage and services (2026-11-20)
+
+- Added a block-device registry with capacity checks, flush (AHCI FLUSH CACHE
+  EXT), I/O counters and normalised errors; GPT/FAT now go through it.
+- Added a mount table with longest-prefix routing, device/partition identity,
+  root ramfs and the FAT32 home. Removed the hardcoded `/home/user` route.
+- Added `STORAGE_DETAILS`, `RENAME`, `SYNC` and `LOG_READ`; Settings shows the
+  device, filesystem, used/free space, partition and real I/O counters.
+- Fixed multi-sector FAT writes repeating the first 512-byte sector; a 64 KiB
+  pattern test now verifies every byte.
+- Settings are versioned (`version=1`), validated per key, written through a
+  temporary file with `SETTINGS.BAK`, and recover from corruption as
+  `SETTINGS.BAD`. Legacy 0.2 files migrate instead of being discarded.
+- Added `configd`, a ring-3 settings service over IPC, plus a desktop
+  supervisor with restart, reaping and direct-I/O fallback. IPC receive now
+  supports timeouts (`ETIMEDOUT`).
+- Files now has forward/back, breadcrumbs, Downloads/Desktop, new folder,
+  rename, delete confirmation, copy/move/paste, information, sorting and
+  search, all using real syscalls.
+- Monitor shows storage usage/free, zombie state and a kernel-log view.
+- Added settings corruption, service restart, Files operation, filesystem and
+  block self-tests; documented performance, storage, services and limits.
+
 ## 0.2.0 - Core milestone (2026-11-20)
 
 - Added PCI configuration access and a polling AHCI driver for the q35 SATA

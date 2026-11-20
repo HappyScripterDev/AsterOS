@@ -29,6 +29,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "configd"
+version = "0.3.0"
+
+[[package]]
 name = "faultprobe"
 version = "0.2.0"
 

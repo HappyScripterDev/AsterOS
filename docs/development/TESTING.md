@@ -24,6 +24,11 @@ python tools/wm_probe.py
 python tools/storage_probe.py
 python tools/persistence_test.py
 python tools/isolation_test.py
+python tools/settings_test.py
+python tools/service_test.py
+python tools/fs_probe.py
+python tools/files_probe.py
+python tools/status_probe.py
 
 # Boot/frame benchmark
 python tools/bench.py
@@ -51,6 +56,11 @@ These run without QEMU and are fast (<1 s).
 - `heap::self_test`: 256 variable-size allocations with content checks, free,
   a 512 KiB allocation, then a 1 MiB allocation that forces chunk coalescing;
   asserts no leak in the allocated counter.
+- `block::self_test`: read LBA 0, reject the first out-of-range LBA and run a
+  device flush.
+- `mount::self_test`: root resolves to ramfs; `/home/user` and nested paths
+  resolve to the FAT mount with the longest prefix.
+- `fat32::self_test`: read a seed, create/write/read/truncate/unlink and mkdir.
 - `mm::selftest::frame_test`: allocate a zeroed frame, write patterns through
   the direct map, map it at a kernel VA, verify translation and reads, unmap,
   free.
@@ -88,6 +98,13 @@ Drives QEMU via QMP:
 
 `storage_probe.py` checks the Settings capacity page, boots without a data
 disk, and rejects a zeroed FAT boot sector without a fault.
+`settings_test.py` boots fresh volumes with corrupt, invalid and valid settings
+and verifies recovery, normalisation and round-trip.
+`service_test.py` verifies configd GET/SET, graceful exit, restart and saving
+through the restarted service.
+`fs_probe.py` writes/reads 64 KiB, renames, deletes and flushes.
+`files_probe.py` drives Files with real keyboard shortcuts.
+`status_probe.py` captures the Monitor logs tab and Settings storage page.
 `persistence_test.py` writes through the Terminal, verifies the guest-written
 volume with the host FAT parser, reboots, and reads the file and settings back.
 
@@ -121,6 +138,12 @@ desktop's own frame-time log. Results are recorded in
 | Launcher/control centre/theme | Yes | Yes | UI probes |
 | Terminal commands | Manual | Yes | `help`, `ls`, `cat`, `write`, `theme` |
 | Process spawn/wait | Implemented | Yes | `isolation_test.py`: status 42 and -11 collected |
+| Storage block layer | Implemented | Yes | Boot bounds/flush self-test; Settings real counters |
+| Mount routing | Implemented | Yes | Boot mount self-test; `/home/user` persistent paths |
+| Settings v1 + recovery | Implemented | Yes | `settings_test.py`: corrupt, invalid, valid cases |
+| Settings service | Implemented | Yes | `service_test.py`: GET/SET, exit, restart, save |
+| Files operations | Implemented | Yes | `files_probe.py`: create/rename/copy/paste/delete/search/info |
+| Monitor storage/logs | Implemented | Yes | `status_probe.py` screenshots |
 | Address-space isolation | Implemented | Yes | Boot memory self-test: same VA, different frames; kernel address rejected |
 | Child fault containment | Implemented | Yes | `faultprobe` faults; desktop still accepts input |
 | IPC ping-pong | Implemented | Yes | `ipcprobe`: 4-byte ping, 4-byte pong, status 0 |

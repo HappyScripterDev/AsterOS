@@ -207,8 +207,18 @@ pub fn send(process: *mut sched::Process, handle: u32, data: &[u8]) -> Result<us
 }
 
 /// Receive one inline message. Blocks while the queue is empty.
-pub fn recv(process: *mut sched::Process, handle: u32, buffer: &mut [u8]) -> Result<usize, i64> {
+pub fn recv(
+    process: *mut sched::Process,
+    handle: u32,
+    buffer: &mut [u8],
+    timeout_ms: u64,
+) -> Result<usize, i64> {
     use aster_abi::errno;
+    let deadline = if timeout_ms == 0 {
+        u64::MAX
+    } else {
+        crate::time::uptime_ms().saturating_add(timeout_ms)
+    };
     loop {
         let endpoint = endpoint_for_handle(process, handle).ok_or(errno::EBADF)?;
         let (channel_id, local) = decode(endpoint);
@@ -240,12 +250,32 @@ pub fn recv(process: *mut sched::Process, handle: u32, buffer: &mut [u8]) -> Res
             return Err(errno::EPIPE);
         }
 
+        let now = crate::time::uptime_ms();
+        if deadline != u64::MAX && now >= deadline {
+            return Err(errno::ETIMEDOUT);
+        }
+
         let tid = sched::current_tid();
         if !channel.endpoints[local].recv_waiters.contains(&tid) {
             channel.endpoints[local].recv_waiters.push(tid);
         }
         drop(table);
-        sched::block_current();
+        sched::block_current_until(deadline);
+
+        // A timeout wake leaves the tid in the queue; remove it before the next
+        // check so a later send does not wake a thread that is no longer here.
+        if deadline != u64::MAX && crate::time::uptime_ms() >= deadline {
+            let mut table = CHANNELS.lock();
+            if let Some(channel) = table
+                .channels
+                .iter_mut()
+                .find(|channel| channel.id == channel_id && channel.active)
+            {
+                channel.endpoints[local]
+                    .recv_waiters
+                    .retain(|&waiter| waiter != tid);
+            }
+        }
     }
 }
 

@@ -1,24 +1,34 @@
 # Persistent Storage
 
-Status: **M1 shipped** (2026-11-20). The home volume is a real FAT32 volume on a
-separate QEMU disk. Files written by a guest survive a reboot; this is verified
-by an independent host-side parser in `tools/persistence_test.py`.
+Status: **0.3.0 update** (2026-11-20). The home volume is a real FAT32 volume
+on a separate QEMU disk, reached through a block registry and a mount table.
+Settings are versioned and backed up. Files written by a guest survive a
+reboot; this is verified by an independent host-side parser in
+`tools/persistence_test.py`.
+
+0.3.0 added: `block.rs` (capacity/bounds/flush/counters), `mount.rs`
+(longest-prefix mount table), AHCI FLUSH CACHE EXT, `STORAGE_DETAILS`,
+`RENAME`, `SYNC`, same-directory FAT rename, and settings v1 with backup and
+corruption recovery.
 
 ## 1. Scope
 
 M1 provides:
 
 - PCI configuration access and AHCI disk I/O for the q35 reference machine.
-- A block layer with sector-range validation and error propagation.
+- A block registry with sector-range validation, flush, counters and error
+  propagation.
 - GPT parsing with header CRC verification.
 - A FAT32 driver with mount, lookup, read, write, create, mkdir, truncate and
   unlink, including directory growth and FAT-chain allocation.
 - A VFS mount at `/home/user` backed by the volume.
-- A real `STORAGE_INFO` syscall and Settings > Storage page.
+- `STORAGE_INFO` and `STORAGE_DETAILS` syscalls plus a real Settings > Storage
+  page (device, filesystem, used/free, partition, I/O).
 - Acceptance tests for write/reboot/read, missing disks and corrupt volumes.
 
-Not in M1: long file names, journaling, permissions, multiple volumes, unmount,
-hotplug, a storage service, and non-AHCI hardware.
+Not yet: long file names, journaling, permissions, multiple volumes, unmount,
+hotplug, a storage service, and non-AHCI hardware. Rename is same-directory
+only; Files moves by copy+delete.
 
 ## 2. Hardware path
 
@@ -83,8 +93,10 @@ path panics on device errors.
 
 `kernel/src/fs.rs` keeps the existing path-based ABI and adds a mount prefix:
 
-- `/home/user` and everything below it routes to the FAT driver.
-- Every other path remains on the in-memory ramfs.
+- `mount::resolve` picks the longest matching mount prefix; `/home/user`
+  routes to the FAT driver and every other path remains on the in-memory ramfs.
+- The mount entry records the device, partition start/size, label and read-only
+  flag. `fs.rs` no longer hardcodes the home path.
 - Inodes use the top byte as a mount tag (`0x01...` = FAT32), so
   `read`/`write`/`stat`/`list` dispatch by inode without changing the ABI.
 - Directory listings return tagged inodes, and `FileStat.inode` is tagged.

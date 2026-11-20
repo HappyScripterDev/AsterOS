@@ -1,9 +1,10 @@
 # Inter-Process Communication
 
-Status: **M3 core shipped** (2026-11-20). Two isolated processes exchange
-messages through kernel channels with bounded queues and blocking receive. The
-Terminal `ipc` and `ipchup` commands exercise the happy path, a forged handle
-and a hangup.
+Status: **0.3.0 services** (2026-11-20). Two isolated processes exchange
+messages through kernel channels with bounded queues, blocking receive and an
+optional receive timeout. `configd` is the first long-lived service; the
+Terminal `ipc`, `ipchup` and `services` commands exercise channels and the
+service supervisor.
 
 ## 1. Model
 
@@ -28,7 +29,7 @@ pid and a per-channel sequence number internally for diagnostics.
 |---|---|---|
 | `CHANNEL_CREATE` (24) | pointer to `u32[2]` | writes the two handle indices, returns 0 |
 | `CHANNEL_SEND` (25) | handle, pointer, length | bytes queued; blocks if the peer queue is full |
-| `CHANNEL_RECV` (26) | handle, pointer, capacity | bytes copied; blocks if empty |
+| `CHANNEL_RECV` (26) | handle, pointer, capacity, timeout ms | bytes copied; blocks if empty; `ETIMEDOUT` |
 | `CHANNEL_CLOSE` (32) | handle | 0, or `EBADF` |
 
 Limits:
@@ -85,9 +86,10 @@ wakeup cannot be lost.
   `EINVAL` for bad sizes or user pointers; `ENOSPC` when the channel table is
   full.
 
-There is no timeout yet: `ETIMEDOUT` is reserved. A malicious process cannot
-block the kernel: it can only block itself, and its peers are bounded by the
-queue and channel limits.
+`CHANNEL_RECV` accepts a timeout in milliseconds (0 = wait forever). The
+thread blocks with an uptime deadline; the timer wakes it, stale waiters are
+removed and `ETIMEDOUT` is returned if no message arrived. This is what keeps a
+hung service from freezing the desktop. `CHANNEL_SEND` still has no timeout.
 
 ## 6. Security
 
@@ -101,7 +103,7 @@ queue and channel limits.
 | Use-after-free of a process | Channel operations run in syscalls with interrupts disabled; the process is only destroyed after its thread is dead and reaped |
 
 Known gaps: no capability layer, no per-service policy, no shared memory for
-bulk data, no handle transfer between arbitrary processes, and no timeout.
+bulk data, no handle transfer between arbitrary processes, and no send timeout.
 These are explicit, not hidden.
 
 ## 7. Tests
@@ -119,7 +121,7 @@ kernel panic. The desktop must still accept the `uname` command afterwards.
 
 ## 8. Follow-ups
 
-1. Timeouts and non-blocking flags (`ETIMEDOUT`, `EAGAIN`).
+1. Non-blocking flags and a send timeout (`EAGAIN`); receive timeout is done.
 2. Bulk transfers through shared memory with refcounted pages.
 3. Explicit handle passing between arbitrary processes.
 4. Per-process quotas and a channel close-on-exit audit trail.

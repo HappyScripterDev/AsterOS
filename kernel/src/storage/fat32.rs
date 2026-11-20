@@ -6,7 +6,7 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use crate::drivers::ahci;
+use crate::block;
 use crate::sync::IrqLock;
 
 use aster_abi::errno;
@@ -69,7 +69,7 @@ fn read_bytes(sector: &[u8], offset: usize, length: usize) -> u32 {
 
 pub fn mount(disk: usize, part_start: u64, sectors: u64) -> Result<MountInfo, &'static str> {
     let mut boot = [0u8; 512];
-    ahci::read_sector(disk, part_start, &mut boot)?;
+    block::read(disk, part_start, &mut boot).map_err(|_| "block read failed")?;
     if boot[510] != 0x55 || boot[511] != 0xAA {
         return Err("missing FAT boot signature");
     }
@@ -150,14 +150,14 @@ impl Fat {
         if lba >= self.total_sectors as u64 {
             return Err(errno::EIO);
         }
-        ahci::read_sector(self.disk, self.part_start + lba, out).map_err(|_| errno::EIO)
+        block::read(self.disk, self.part_start + lba, out)
     }
 
     fn write_sector(&self, lba: u64, data: &[u8; 512]) -> Result<(), i64> {
         if lba >= self.total_sectors as u64 {
             return Err(errno::EIO);
         }
-        ahci::write_sector(self.disk, self.part_start + lba, data).map_err(|_| errno::EIO)
+        block::write(self.disk, self.part_start + lba, data)
     }
 
     fn cluster_bytes(&self) -> u32 {
@@ -523,6 +523,7 @@ impl Fat {
         }
         let mut within = (start % cluster_bytes) as usize;
         let mut position = start;
+        let mut consumed = source_offset;
         while position < end {
             let sector_index = within / 512;
             let sector_offset = within % 512;
@@ -532,12 +533,12 @@ impl Fat {
             let chunk = (512 - sector_offset).min((end - position) as usize);
             match source {
                 Some(bytes) => {
-                    let available = bytes.len().saturating_sub(source_offset);
+                    let available = bytes.len().saturating_sub(consumed);
                     let count = chunk.min(available);
                     if count > 0 {
-                        let from = source_offset;
                         sector[sector_offset..sector_offset + count]
-                            .copy_from_slice(&bytes[from..from + count]);
+                            .copy_from_slice(&bytes[consumed..consumed + count]);
+                        consumed += count;
                     }
                     if count < chunk {
                         sector[sector_offset + count..sector_offset + chunk].fill(0);
@@ -680,6 +681,36 @@ impl Fat {
             }
             Err(code) => Err(code),
         }
+    }
+
+    fn rename_path(&mut self, old_path: &str, new_path: &str) -> Result<(), i64> {
+        let old_inode = self.lookup(old_path)?;
+        if old_inode == 0 {
+            return Err(errno::EPERM);
+        }
+        let (old_parent, _) = split_parent(old_path)?;
+        let (new_parent, new_name) = split_parent(new_path)?;
+        let old_parent_inode = self.lookup(old_parent)?;
+        let new_parent_inode = self.lookup(new_parent)?;
+        if old_parent_inode != new_parent_inode {
+            return Err(errno::EINVAL);
+        }
+        let parent = self.location(new_parent_inode)?;
+        if !parent.directory {
+            return Err(errno::ENOTDIR);
+        }
+        let short = make_83(new_name)?;
+        if let Some((existing, _)) = self.lookup_component(parent.first_cluster, new_name)? {
+            if existing != old_inode {
+                return Err(errno::EEXIST);
+            }
+            return Ok(());
+        }
+        let mut entry = self.read_entry(old_inode)?;
+        entry[0..11].copy_from_slice(&short);
+        // The short entry is now uppercase; clear the case flags.
+        entry[12] = 0;
+        self.write_entry(old_inode, &entry)
     }
 
     fn mkdir_path(&mut self, path: &str) -> Result<u64, i64> {
@@ -858,6 +889,10 @@ pub fn mkdir(path: &str) -> Result<u64, i64> {
 
 pub fn unlink(path: &str) -> Result<(), i64> {
     with_fat(|fat| fat.unlink_path(path))
+}
+
+pub fn rename(old_path: &str, new_path: &str) -> Result<(), i64> {
+    with_fat(|fat| fat.rename_path(old_path, new_path))
 }
 
 pub fn write(inode: u64, offset: u64, data: &[u8]) -> Result<usize, i64> {

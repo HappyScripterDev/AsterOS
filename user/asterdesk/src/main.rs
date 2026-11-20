@@ -12,6 +12,8 @@ mod font_data;
 mod gfx;
 mod icons_data;
 mod logo_data;
+mod services;
+mod settings;
 mod sys;
 mod theme;
 mod ui;

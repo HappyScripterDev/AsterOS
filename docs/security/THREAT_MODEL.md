@@ -105,6 +105,9 @@ explicit limitation, not a hidden one.
 | Access control | None: the ramfs and the FAT32 home are global; 0644/0755 are informational | No uid/gid enforcement, ACLs, or capabilities |
 | Symlink attacks | Symlinks are not implemented | Future AFS must handle them carefully |
 | Disk corruption | GPT header CRC, FAT geometry checks, bounded chain walks, `EIO` on malformed metadata | No journal/checksums; a torn multi-sector write can truncate a file |
+| Settings corruption | v1 validation, per-key defaults, `SETTINGS.BAD`, `SETTINGS.BAK`, temp+rename+flush | No journal; power loss between renames can fall back to the backup |
+| Service impersonation | configd only accepts messages on its inherited bootstrap channel; handles are per-process | No capability model or per-service identity |
+| Hung service | IPC receive timeout; desktop falls back to direct settings I/O | No `KILL`; a hung service cannot be forcibly removed |
 | Data loss on power-off | `/home/user` is persistent when the data disk is present | System files remain volatile; writes are synchronous but not atomic |
 | Boot image corruption | The kernel only reads the ESP; user data is on a separate disk | Physical access can still replace the boot image |
 
@@ -113,7 +116,7 @@ explicit limitation, not a hidden one.
 | Threat | Mitigation today | Gap |
 |---|---|---|
 | App reads another app's data | Spawned processes are isolated; IPC handles are per-process | Built-in apps still share the desktop address space |
-| Handle forgery / message flood | Handles validated against the caller's table; 8 x 256 B queues, 32 channels | No capability layer; no IPC timeouts |
+| Handle forgery / message flood | Handles validated against the caller's table; 8 x 256 B queues, 32 channels; receive timeout | No capability layer; send has no timeout |
 | Malicious file crashes the editor | Strings are UTF-8 lossy; sizes capped | No fuzzing; no parser sandboxing |
 | Fake UI actions | Controls call real syscalls or show explicit "not implemented" text | Store/Installer/Update/Browser are absent by design |
 | Screen capture by an app | Framebuffer is mapped only into the desktop | Any in-process app can read the desktop's buffer |
