@@ -25,6 +25,10 @@ def type_text(qmp: Qmp, text: str) -> None:
     for ch in text:
         if ch == " ":
             qmp.command("send-key", keys=[{"type": "qcode", "data": "spc"}])
+        elif ch == "/":
+            qmp.command("send-key", keys=[{"type": "qcode", "data": "slash"}])
+        elif ch == ".":
+            qmp.command("send-key", keys=[{"type": "qcode", "data": "dot"}])
         else:
             qmp.command("send-key", keys=[{"type": "qcode", "data": ch}])
         time.sleep(0.05)
@@ -71,6 +75,14 @@ def main() -> None:
         qmp.command("send-key", keys=[{"type": "qcode", "data": "ret"}])
         time.sleep(1.0)
         shot("01-terminal-help.ppm")
+
+        type_text(qmp, "ls")
+        qmp.command("send-key", keys=[{"type": "qcode", "data": "ret"}])
+        time.sleep(0.8)
+        type_text(qmp, "cat /etc/motd")
+        qmp.command("send-key", keys=[{"type": "qcode", "data": "ret"}])
+        time.sleep(0.8)
+        shot("01b-terminal-files.ppm")
 
         open_launcher(qmp)
         type_text(qmp, "set")
