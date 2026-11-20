@@ -58,8 +58,8 @@ Out of scope for this milestone:
 +----------------------------------------------------------------+
 ```
 
-There is no IPC and no second user process yet, so the ring-3 boundary is the
-only software isolation boundary that matters today. Built-in apps share the
+Spawned processes have private address spaces and can exchange messages over
+kernel channels with per-process handles. Built-in apps still share the
 desktop address space; a bug in one can read another's memory. This is an
 explicit limitation, not a hidden one.
 
@@ -112,7 +112,8 @@ explicit limitation, not a hidden one.
 
 | Threat | Mitigation today | Gap |
 |---|---|---|
-| App reads another app's data | Apps share one address space; no isolation | Requires per-app processes + IPC |
+| App reads another app's data | Spawned processes are isolated; IPC handles are per-process | Built-in apps still share the desktop address space |
+| Handle forgery / message flood | Handles validated against the caller's table; 8 x 256 B queues, 32 channels | No capability layer; no IPC timeouts |
 | Malicious file crashes the editor | Strings are UTF-8 lossy; sizes capped | No fuzzing; no parser sandboxing |
 | Fake UI actions | Controls call real syscalls or show explicit "not implemented" text | Store/Installer/Update/Browser are absent by design |
 | Screen capture by an app | Framebuffer is mapped only into the desktop | Any in-process app can read the desktop's buffer |

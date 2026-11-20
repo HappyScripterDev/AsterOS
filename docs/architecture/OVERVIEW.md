@@ -93,6 +93,7 @@ early boot. This is a documented constraint, not a general VMM feature.
 | Heap | `mm/heap.rs` | First-fit with coalescing over a mapped virtual region, `GlobalAlloc`. |
 | Scheduler | `sched.rs` | Threads, processes, round-robin, FXSAVE context switch, preemption, reaping. |
 | Syscalls | `syscall.rs` | `int 0x80` dispatch, pointer validation, errno returns. |
+| Processes | `sched.rs`, `user.rs` | Spawn, wait, zombies, fault containment; see `docs/architecture/PROCESSES.md`. |
 | Storage | `storage/`, `drivers/ahci.rs` | GPT + FAT32 home volume over AHCI; see `docs/architecture/STORAGE.md`. |
 | Filesystem | `fs.rs` | VFS front-end: ramfs root, FAT32 mount at `/home/user`, inode dispatch, fd-facing operations. |
 | Input | `drivers/ps2.rs` | PS/2 keyboard/mouse, event queue. |

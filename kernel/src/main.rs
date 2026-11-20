@@ -26,6 +26,7 @@ mod boot;
 mod drivers;
 mod exceptions;
 mod fs;
+mod ipc;
 mod logging;
 mod mm;
 mod sched;

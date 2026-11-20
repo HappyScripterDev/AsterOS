@@ -100,6 +100,16 @@ def build(clean: bool = False, modules: bool = True, desktop: bool = True, fresh
         desk = artifact("asterdesk", KERNEL_TARGET, "asterdesk")
         shutil.copyfile(desk, BUILD / "asterdesk.elf")
         files["/DESK.ELF"] = desk.read_bytes()
+
+        print("[3/5] isolation probes")
+        for package, image_name in (
+            ("isoprobe", "ISOPROBE.ELF"),
+            ("faultprobe", "FAULTPRB.ELF"),
+            ("ipcprobe", "IPCPROBE.ELF"),
+        ):
+            cargo_build(package, KERNEL_TARGET)
+            probe = artifact(package, KERNEL_TARGET, package)
+            files[f"/{image_name}"] = probe.read_bytes()
     else:
         print("[3/5] desktop skipped")
 

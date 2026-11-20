@@ -171,12 +171,9 @@ unsafe fn map_stack(pml4: u64) -> Result<u64, &'static str> {
     Ok(vmm::USER_STACK_TOP - 16)
 }
 
-/// Load a module provided by the bootloader and start it as a ring-3 process.
-pub fn spawn_module(name: &str) -> Result<u64, &'static str> {
-    let module = boot::module(name).ok_or("module not provided by the bootloader")?;
-    let bytes = unsafe {
-        core::slice::from_raw_parts(vmm::hhdm(module.address) as *const u8, module.size as usize)
-    };
+/// Load an ELF image into a fresh address space and start it as a ring-3
+/// process owned by `parent` (0 for boot-time processes).
+pub fn spawn_image(name: &str, bytes: &[u8], parent: u64) -> Result<u64, &'static str> {
     let image = parse_elf(bytes)?;
     let pml4 = vmm::create_user_pml4().ok_or("out of memory for a page table")?;
 
@@ -196,6 +193,7 @@ pub fn spawn_module(name: &str) -> Result<u64, &'static str> {
                 image.entry,
                 stack_pointer,
                 vmm::USER_BASE + 0x1000_0000,
+                parent,
             )
         }),
         Err(error) => {
@@ -205,4 +203,49 @@ pub fn spawn_module(name: &str) -> Result<u64, &'static str> {
             Err(error)
         }
     }
+}
+
+/// Load a module provided by the bootloader and start it as PID 1.
+pub fn spawn_module(name: &str) -> Result<u64, &'static str> {
+    let module = boot::module(name).ok_or("module not provided by the bootloader")?;
+    let bytes = unsafe {
+        core::slice::from_raw_parts(vmm::hhdm(module.address) as *const u8, module.size as usize)
+    };
+    spawn_image(name, bytes, 0)
+}
+
+fn error_code(error: &str) -> i64 {
+    if error.contains("memory") || error.contains("page table") {
+        aster_abi::errno::ENOMEM
+    } else {
+        aster_abi::errno::EINVAL
+    }
+}
+
+/// Spawn from a path. The file is read from the VFS first; if it does not
+/// exist, a boot-provided system module with the same stem is used. This makes
+/// system executables available even on a machine without a data disk.
+pub fn spawn_path(path: &str, parent: u64) -> Result<u64, i64> {
+    let stem = path
+        .rsplit('/')
+        .next()
+        .unwrap_or(path)
+        .trim_end_matches(".elf")
+        .trim_end_matches(".ELF");
+
+    if let Some(bytes) = crate::fs::read_whole(path) {
+        return spawn_image(stem, &bytes, parent).map_err(error_code);
+    }
+
+    if let Some(module) = boot::module(&stem.to_ascii_lowercase()) {
+        let bytes = unsafe {
+            core::slice::from_raw_parts(
+                vmm::hhdm(module.address) as *const u8,
+                module.size as usize,
+            )
+        };
+        return spawn_image(stem, bytes, parent).map_err(error_code);
+    }
+
+    Err(aster_abi::errno::ENOENT)
 }

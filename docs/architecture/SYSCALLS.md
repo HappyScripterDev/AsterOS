@@ -31,23 +31,24 @@ kernel writes. Missing mappings return `EINVAL`, never fault the kernel.
 | 18 | STAT | path, out | 0 | Implemented |
 | 19 | UNLINK | path | 0 | Implemented |
 | 20 | MKDIR | path | 0 | Implemented |
-| 21 | SPAWN | path | pid | **ENOSYS** |
-| 22 | WAIT | pid | status | **ENOSYS** |
+| 21 | SPAWN | path | child pid | Implemented (`ECHILD`/`EPERM`/`ENOENT`) |
+| 22 | WAIT | pid, status ptr | child pid, status written | Implemented; `pid 0` waits for any child |
 | 23 | SYSTEM_INFO | out ptr | bytes | Implemented |
-| 24 | CHANNEL_CREATE | - | handle pair | **ENOSYS** |
-| 25 | CHANNEL_SEND | handle, ptr, len | bytes | **ENOSYS** |
-| 26 | CHANNEL_RECV | handle, ptr, len | bytes | **ENOSYS** |
+| 24 | CHANNEL_CREATE | ptr to `u32[2]` | handles written | Implemented |
+| 25 | CHANNEL_SEND | handle, ptr, len | bytes | Implemented, blocks when full |
+| 26 | CHANNEL_RECV | handle, ptr, cap | bytes | Implemented, blocks when empty |
 | 27 | SET_THEME | - | 0 | **ENOSYS** (appearance is fixed to light) |
 | 28 | SHUTDOWN | - | halts | Implemented, no capability check |
 | 29 | RTC | out ptr | 0 | Implemented |
 | 30 | PROC_LIST | out ptr, max | count | Implemented |
 | 31 | STORAGE_INFO | out ptr | 0 | Implemented (M1) |
+| 32 | CHANNEL_CLOSE | handle | 0 | Implemented (M3) |
 
 ## Error codes
 
 `EPERM`, `ENOENT`, `EBADF`, `ENOMEM`, `EINVAL`, `EIO`, `EEXIST`, `ENOTDIR`,
-`EISDIR`, `ENOSPC`, `ENAMETOOLONG`, `ENOSYS`. `ETIMEDOUT`, `EPIPE`, `ECHILD`,
-`ESRCH` are reserved for IPC and `WAIT`.
+`EISDIR`, `ENOSPC`, `ENAMETOOLONG`, `ECHILD`, `ESRCH`, `EPIPE`, `ETIMEDOUT`,
+`ENOSYS`. `ETIMEDOUT` is reserved for future timers.
 
 ## Validation rules
 
@@ -62,6 +63,7 @@ kernel writes. Missing mappings return `EINVAL`, never fault the kernel.
 
 ## Blocking
 
-Only `SLEEP_MS` (and `EXIT`, which never returns) blocks today. A blocking
+`SLEEP_MS`, `WAIT` (until a child becomes a zombie), `CHANNEL_SEND` (queue
+full), `CHANNEL_RECV` (queue empty) and `EXIT` (never returns) block today. A blocking
 syscall must set the thread state and call the scheduler itself; the gate
 already runs with interrupts disabled. IPC will add `block_on`/`wake`.

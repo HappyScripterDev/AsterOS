@@ -33,6 +33,9 @@ const COM1: u16 = 0x3F8;
 const VERSION: &str = "0.1.0";
 const KERNEL_PATH: &str = "\\KERNEL.ELF";
 const DESK_PATH: &str = "\\DESK.ELF";
+const ISOPROBE_PATH: &str = "\\ISOPROBE.ELF";
+const FAULTPROBE_PATH: &str = "\\FAULTPRB.ELF";
+const IPCPROBE_PATH: &str = "\\IPCPROBE.ELF";
 const TRAMPOLINE: [u8; 8] = [0x48, 0x0F, 0x22, 0xDE, 0x48, 0xFF, 0xE0, 0x90];
 
 #[inline]
@@ -493,6 +496,33 @@ pub extern "efiapi" fn efi_main(image: Handle, system_table: *mut SystemTable) -
             module_count = 1;
         }
         Err(e) => log!("[warn] desktop module not available: {}\n", e),
+    }
+    if module_count == 1 {
+        match unsafe { load_module(bs, root, ISOPROBE_PATH, "isoprobe") } {
+            Ok(module) => {
+                modules[module_count] = module;
+                module_count += 1;
+            }
+            Err(e) => log!("[warn] isolation probe not available: {}\n", e),
+        }
+    }
+    if module_count == 2 {
+        match unsafe { load_module(bs, root, FAULTPROBE_PATH, "faultprobe") } {
+            Ok(module) => {
+                modules[module_count] = module;
+                module_count += 1;
+            }
+            Err(e) => log!("[warn] fault probe not available: {}\n", e),
+        }
+    }
+    if module_count == 3 {
+        match unsafe { load_module(bs, root, IPCPROBE_PATH, "ipcprobe") } {
+            Ok(module) => {
+                modules[module_count] = module;
+                module_count += 1;
+            }
+            Err(e) => log!("[warn] IPC probe not available: {}\n", e),
+        }
     }
 
     // --- page tables --------------------------------------------------------

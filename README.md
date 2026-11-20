@@ -6,7 +6,7 @@ Aster OS is an independent, from-scratch desktop operating system for x86_64.
 It is **not** a Linux distribution, **not** a modified Windows or macOS, and
 **not** a desktop mockup. It has its own UEFI bootloader, higher-half kernel,
 memory manager, scheduler, system-call ABI, filesystem, input stack, and a
-ring-3 desktop environment with a light, macOS-inspired software compositor.
+ring-3 desktop environment with a light, macOS-inspired software compositor, isolated child processes and a persistent FAT32 home volume.
 
 ![Aster Desktop](docs/screenshots/desktop.png)
 
@@ -24,6 +24,8 @@ disk image). The current milestone is a **single-CPU developer preview**:
 | Filesystem | In-memory ramfs with paths, directories, files, file descriptors, `readdir`, `stat`, `unlink`, `mkdir` |
 | Desktop | Aster Desktop in ring 3: light menu bar, Spotlight launcher, dock with generated app icons and magnification, macOS-style window manager (traffic lights, drag, resize, maximize, snap, animations), Control Centre, notifications, virtual desktops |
 | Storage | Separate GPT/FAT32 data disk over AHCI; `/home/user` is persistent; Settings reports real capacity; boot disk is read-only to the kernel |
+| Processes | Private PML4 per process; `SPAWN`/`WAIT`; zombie reaping; every ring-3 exception contained; isolation probe with exit status 42 and a deliberate fault returning -11 |
+| IPC | Kernel channels with per-process handles, 256-byte messages, blocking send/receive, close/hangup; ping-pong verified between isolated processes |
 | Apps | Terminal (real shell + ramfs), Files, Settings, Calculator, Monitor, Text, Notes, Calendar, Wallpapers |
 | Tests | Image verifier, kernel self-tests, ramfs self-test, QEMU boot smoke test, scripted UI/pointer tests |
 

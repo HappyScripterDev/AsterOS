@@ -84,7 +84,7 @@ the volume uses 8.3 names, transfers one sector per AHCI command, and has no
 journal. These are documented in `docs/architecture/STORAGE.md` and in
 Settings.
 
-### M2 - Process isolation and lifecycle (current)
+### M2 - Process isolation and lifecycle (CORE COMPLETE, 2026-11-20)
 
 Depends on: M1 robustness fixes (exception containment, PMM bounds).
 
@@ -104,7 +104,13 @@ Deliverables:
   returns the exact exit status; repeated spawn/exit for 100 iterations leaves
   PMM accounting stable.
 
-### M3 - IPC channels
+M2 result: `SPAWN`/`WAIT`, zombies, event wake-up and full fault containment
+are implemented and verified. `tools/isolation_test.py` spawns a normal child
+(status 42) and a child that writes to kernel memory (status -11), and the
+desktop survives both. Still open from the M2 list: per-process page quotas,
+guard pages, ASLR and a `KILL` primitive. They are tracked for M5.
+
+### M3 - IPC channels (CORE COMPLETE, 2026-11-20)
 
 Depends on: M2 (processes, wait primitive, handle tables).
 
@@ -120,7 +126,12 @@ Deliverables:
   forged handle returns `EBADF`; a full queue blocks and drains; close wakes
   waiters with `EPIPE`.
 
-### M4 - First system service
+M3 result: channels, handles, blocking send/receive, close/hangup and
+bootstrap handles are implemented. `tools/isolation_test.py` proves a ping-pong
+between two isolated processes, `EBADF` for a forged handle and `EPIPE` after a
+peer exits. Timeouts, shared memory and arbitrary handle transfer remain open.
+
+### M4 - First system service (current)
 
 Depends on: M3 and M1.
 

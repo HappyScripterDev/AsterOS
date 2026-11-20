@@ -33,6 +33,10 @@ pub fn write(bytes: &[u8]) -> i64 {
     }
 }
 
+pub fn raw(number: u64, a: u64, b: u64, c: u64) -> i64 {
+    unsafe { syscall6(number, a, b, c, 0, 0, 0) }
+}
+
 pub fn log(message: &[u8]) -> i64 {
     unsafe {
         syscall6(
@@ -201,6 +205,81 @@ pub fn read_dir(path: &str) -> Option<alloc::vec::Vec<(alloc::string::String, bo
     }
     close(fd);
     Some(entries)
+}
+
+pub fn spawn(path: &str) -> i64 {
+    spawn_with_handle(path, 0)
+}
+
+pub fn spawn_with_handle(path: &str, bootstrap: u32) -> i64 {
+    let (buffer, _) = path_buffer(path);
+    unsafe {
+        syscall6(
+            sys::SPAWN,
+            buffer.as_ptr() as u64,
+            bootstrap as u64,
+            0,
+            0,
+            0,
+            0,
+        )
+    }
+}
+
+pub fn channel_create() -> Option<(u32, u32)> {
+    let mut handles = [0u32; 2];
+    let result = unsafe {
+        syscall6(
+            sys::CHANNEL_CREATE,
+            handles.as_mut_ptr() as u64,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    if result < 0 {
+        None
+    } else {
+        Some((handles[0], handles[1]))
+    }
+}
+
+pub fn channel_send(handle: u32, data: &[u8]) -> i64 {
+    unsafe {
+        syscall6(
+            sys::CHANNEL_SEND,
+            handle as u64,
+            data.as_ptr() as u64,
+            data.len() as u64,
+            0,
+            0,
+            0,
+        )
+    }
+}
+
+pub fn channel_recv(handle: u32, buffer: &mut [u8]) -> i64 {
+    unsafe {
+        syscall6(
+            sys::CHANNEL_RECV,
+            handle as u64,
+            buffer.as_mut_ptr() as u64,
+            buffer.len() as u64,
+            0,
+            0,
+            0,
+        )
+    }
+}
+
+pub fn channel_close(handle: u32) -> i64 {
+    unsafe { syscall6(sys::CHANNEL_CLOSE, handle as u64, 0, 0, 0, 0, 0) }
+}
+
+pub fn wait(pid: u64, status: &mut i64) -> i64 {
+    unsafe { syscall6(sys::WAIT, pid, status as *mut i64 as u64, 0, 0, 0, 0) }
 }
 
 pub fn storage_info() -> Option<aster_abi::StorageInfo> {

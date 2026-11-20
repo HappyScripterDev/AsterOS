@@ -192,6 +192,7 @@ pub mod sys {
     pub const RTC: u64 = 29;
     pub const PROC_LIST: u64 = 30;
     pub const STORAGE_INFO: u64 = 31;
+    pub const CHANNEL_CLOSE: u64 = 32;
 }
 
 /// Error codes returned in `rax` by system calls. Negative values are errors.
@@ -208,6 +209,10 @@ pub mod errno {
     pub const EISDIR: i64 = -9;
     pub const ENOSPC: i64 = -10;
     pub const ENAMETOOLONG: i64 = -11;
+    pub const ECHILD: i64 = -12;
+    pub const ESRCH: i64 = -13;
+    pub const EPIPE: i64 = -14;
+    pub const ETIMEDOUT: i64 = -15;
     pub const ENOSYS: i64 = -38;
 }
 

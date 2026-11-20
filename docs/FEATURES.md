@@ -18,10 +18,10 @@ verified during the recorded milestone session. Limitations are explicit.
 | Kernel heap | Implemented | Yes | First-fit, 48-256 MiB virtual limit, self-test |
 | Scheduler | Partial | Yes | Preemptive user threads; kernel threads cooperative; single CPU |
 | Context switching | Implemented | Yes | Callee-saved + FXSAVE, CR3 switch |
-| System calls | Partial | Yes | 31 numbers, 25 implemented; SPAWN/WAIT/IPC return ENOSYS; STORAGE_INFO added |
-| Ring-3 processes | Implemented | Yes | Desktop PID 1; static ELF, fixed base, 64 KiB stack |
-| IPC | Not implemented | No | ABI reserved; design in docs/architecture/IPC.md |
-| Process creation API | Not implemented | No | `SPAWN` reserved |
+| System calls | Partial | Yes | 32 numbers, 31 implemented; SET_THEME returns ENOSYS (light appearance is fixed) |
+| Ring-3 processes | Implemented | Yes | Desktop PID 1 plus spawned children; private PML4, 64 KiB stack, W^X ELF |
+| IPC | Implemented | Yes | Bidirectional channels, handles, blocking send/recv, close/hangup; 8x256 B queues; no timeouts/shared memory |
+| Process creation API | Implemented | Yes | `SPAWN`/`WAIT`; isolation test spawns a normal and a faulting child |
 | Serial console | Implemented | Yes | COM1, 115200 8N1, ring buffer |
 | Framebuffer | Implemented | Yes | GOP 1280x800, user mapping |
 | PS/2 keyboard | Implemented | Yes | ASCII + special keys, modifiers; no typematic repeat in guest |
@@ -52,7 +52,7 @@ verified during the recorded milestone session. Limitations are explicit.
 | Browser | Not implemented | - | No network or engine integration |
 | Networking | Not implemented | - | No Ethernet/IP/DHCP/DNS/TCP/UDP |
 | Users/login | Not implemented | - | Single implicit `user`, no password |
-| Sandboxing | Not implemented | - | Apps share the desktop address space |
+| Sandboxing | Partial | Yes | Spawned processes have private address spaces; built-in apps still share the desktop |
 | ASLR/KASLR | Not implemented | - | Fixed addresses |
 | SMEP/SMAP/UMIP | Not implemented | - | CPU features not enabled |
 | Signed boot/packages/updates | Not implemented | - | No crypto stack |

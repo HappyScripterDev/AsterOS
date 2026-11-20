@@ -3,9 +3,9 @@
 ## 1. What exists today
 
 Aster OS has no separate init daemon or service manager yet. The kernel starts
-one user process (the desktop) and exposes kernel-resident services through
-syscalls. This is deliberate: there is no stable process-spawn ABI or IPC, so a
-service manager would be a facade.
+the desktop as PID 1 and exposes kernel-resident services through syscalls.
+`SPAWN`/`WAIT` and channel IPC now exist, so a service manager is the next
+architectural step rather than a facade.
 
 | Service | Location | Interface | State |
 |---|---|---|---|
@@ -16,6 +16,9 @@ service manager would be a facade.
 | Memory | PMM/VMM/heap, `VM_ALLOC`, `SYSTEM_INFO` | syscalls | Implemented |
 | Filesystem | `fs.rs` ramfs | `OPEN/READ/WRITE_FD/...` | Implemented (volatile) |
 | Process information | `sched::list_processes`, `PROC_LIST` | syscall | Implemented |
+| Process creation | `SPAWN`/`WAIT`, private PML4 | syscall | Implemented |
+| IPC | `ipc.rs`, `CHANNEL_*` | syscall | Implemented (channels, handles, blocking) |
+| Persistent home | AHCI + GPT + FAT32 at `/home/user` | VFS syscalls | Implemented |
 | Session / shell / WM | ring-3 `asterdesk` | owns the screen | Implemented |
 | Built-in apps | `apps.rs` | in-process modules of the desktop | Implemented |
 
@@ -27,13 +30,15 @@ manager, power manager, log service, notification daemon, clipboard service.
 
 ```
 kernel init
-  -> ramfs seeded (/etc, /system, /home/user, ...)
+  -> ramfs seeded (/etc, /system, ...)
+  -> AHCI/GPT/FAT32 mounted at /home/user (if the data disk exists)
   -> scheduler idle thread
   -> load /DESK ELF as PID 1
   -> scheduler start
   -> desktop maps framebuffer, allocates its heap, builds wallpaper
-  -> desktop loads preferences from /home/user/settings.conf
+  -> desktop loads preferences from /home/user/SETTINGS.CNF
   -> desktop shows the shell (no login; single implicit user)
+  -> desktop may SPAWN children and exchange channel messages
 ```
 
 If the desktop module is missing or fails to load, the kernel logs the error,
@@ -43,10 +48,12 @@ stays alive on the idle thread, and does not fake a desktop.
 
 - **Kernel services** are exposed only through syscalls with validated user
   pointers. The desktop has no hardware access beyond the mapped framebuffer.
-- **Desktop apps** are modules of the desktop process. They share its address
-  space, so a crash in one app currently takes down the shell. This is a
-  known limitation and the primary motivation for the planned IPC and
-  multi-process application model.
+- **Spawned processes** get private address spaces and cannot read each
+  other's memory. They communicate through kernel channels with per-process
+  handles.
+- **Desktop apps** are still modules of the desktop process. They share its
+  address space, so a crash in one app currently takes down the shell. Moving
+  them onto the process and IPC foundations is the next application milestone.
 - **Filesystem access** is global: there is no per-user or per-app mount
   namespace, ACL, or capability check yet.
 
@@ -54,11 +61,11 @@ stays alive on the idle thread, and does not fake a desktop.
 
 Order of work, with dependencies:
 
-1. `SPAWN`/`WAIT` syscalls and a minimal init process (`system/init`).
-2. Channel IPC (see `IPC.md`) plus `CHANNEL_*` syscalls.
+1. ~~`SPAWN`/`WAIT` syscalls and a minimal init process.~~ Done.
+2. ~~Channel IPC plus `CHANNEL_*` syscalls.~~ Done.
 3. A service manager that starts services in dependency order, restarts them on
-   failure, and passes a bootstrap channel.
-4. Storage service (block device + AFS) once VirtIO/AHCI exists.
+   failure, and passes a bootstrap channel. Next.
+4. Storage service over IPC on top of the existing AHCI/FAT32 stack.
 5. Identity service: user database, login, per-process credentials.
 6. Policy service: capability checks for filesystem, network, devices.
 7. Network service: Ethernet -> IPv4 -> DHCP/DNS -> TCP/UDP -> socket API.

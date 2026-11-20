@@ -61,6 +61,15 @@ pub fn handle(frame: &mut InterruptFrame) {
         sys::STAT => stat_path(pml4, args[0], args[1]),
         sys::UNLINK => unlink_path(pml4, args[0]),
         sys::MKDIR => mkdir_path(pml4, args[0]),
+        sys::SPAWN => spawn_process(pml4, process, args[0], args[1]),
+        sys::WAIT => wait_process(pml4, args[0], args[1]),
+        sys::CHANNEL_CREATE => channel_create(process, args[0]),
+        sys::CHANNEL_SEND => channel_send(pml4, process, args[0] as u32, args[1], args[2] as usize),
+        sys::CHANNEL_RECV => channel_recv(pml4, process, args[0] as u32, args[1], args[2] as usize),
+        sys::CHANNEL_CLOSE => match crate::ipc::close(process, args[0] as u32) {
+            Ok(()) => 0,
+            Err(code) => error(code),
+        },
         sys::RTC => rtc_time(pml4, args[0]),
         sys::PROC_LIST => process_list(pml4, args[0], args[1] as usize),
         sys::STORAGE_INFO => storage_info(pml4, args[0]),
@@ -456,6 +465,105 @@ fn process_list(pml4: u64, pointer: u64, maximum: usize) -> u64 {
         return error(errno::EINVAL);
     }
     count as u64
+}
+
+fn spawn_process(
+    pml4: u64,
+    process: *mut sched::Process,
+    path_pointer: u64,
+    bootstrap: u64,
+) -> u64 {
+    if sched::process_count() >= 24 {
+        return error(errno::EPERM);
+    }
+    let path = match read_path(pml4, path_pointer) {
+        Ok(path) => path,
+        Err(code) => return error(code),
+    };
+    let endpoint = if bootstrap != 0 {
+        match crate::ipc::endpoint_for_handle(process, bootstrap as u32) {
+            Some(endpoint) => Some(endpoint),
+            None => return error(errno::EBADF),
+        }
+    } else {
+        None
+    };
+    match crate::user::spawn_path(&path, sched::current_pid()) {
+        Ok(pid) => {
+            if let Some(endpoint) = endpoint {
+                if let Err(code) = crate::ipc::install_in_child(pid, endpoint) {
+                    return error(code);
+                }
+            }
+            pid
+        }
+        Err(code) => error(code),
+    }
+}
+
+fn channel_create(process: *mut sched::Process, out: u64) -> u64 {
+    match crate::ipc::create(process, out as *mut u8) {
+        Ok(()) => 0,
+        Err(code) => error(code),
+    }
+}
+
+fn channel_send(
+    pml4: u64,
+    process: *mut sched::Process,
+    handle: u32,
+    pointer: u64,
+    length: usize,
+) -> u64 {
+    if length > crate::ipc::MAX_PAYLOAD {
+        return error(errno::EINVAL);
+    }
+    let mut buffer = alloc::vec![0u8; length];
+    if vmm::copy_from_user(pml4, pointer, &mut buffer).is_err() {
+        return error(errno::EINVAL);
+    }
+    match crate::ipc::send(process, handle, &buffer) {
+        Ok(written) => written as u64,
+        Err(code) => error(code),
+    }
+}
+
+fn channel_recv(
+    pml4: u64,
+    process: *mut sched::Process,
+    handle: u32,
+    pointer: u64,
+    capacity: usize,
+) -> u64 {
+    let capacity = capacity.min(crate::ipc::MAX_PAYLOAD);
+    if capacity == 0 {
+        return error(errno::EINVAL);
+    }
+    let mut buffer = alloc::vec![0u8; capacity];
+    match crate::ipc::recv(process, handle, &mut buffer) {
+        Ok(length) => {
+            if vmm::copy_to_user(pml4, pointer, &buffer[..length]).is_err() {
+                return error(errno::EINVAL);
+            }
+            length as u64
+        }
+        Err(code) => error(code),
+    }
+}
+
+fn wait_process(pml4: u64, pid: u64, status_pointer: u64) -> u64 {
+    if status_pointer == 0 {
+        return error(errno::EINVAL);
+    }
+    match sched::wait_child(pid) {
+        Ok((child, status)) => {
+            if vmm::copy_to_user(pml4, status_pointer, &status.to_le_bytes()).is_err() {
+                return error(errno::EINVAL);
+            }
+            child
+        }
+        Err(code) => error(code),
+    }
 }
 
 fn storage_info(pml4: u64, pointer: u64) -> u64 {

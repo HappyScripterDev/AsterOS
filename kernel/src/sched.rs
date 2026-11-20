@@ -30,15 +30,24 @@ pub enum ThreadState {
     Dead,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ProcessState {
+    Alive,
+    Zombie,
+}
+
 #[repr(C)]
 pub struct Process {
     pub pid: u64,
+    pub parent: u64,
     pub name: [u8; 24],
     pub pml4: u64,
     pub heap_cursor: u64,
     pub fb_va: u64,
     pub exit_code: i64,
+    pub state: ProcessState,
     pub threads_alive: u32,
+    pub channels: alloc::vec::Vec<Option<u64>>,
     pub fds: alloc::vec::Vec<Option<crate::fs::OpenFile>>,
 }
 
@@ -262,15 +271,23 @@ pub unsafe fn register_process(
     entry: u64,
     stack_top: u64,
     heap_cursor: u64,
+    parent: u64,
 ) -> u64 {
     let process = alloc::boxed::Box::into_raw(alloc::boxed::Box::new(Process {
         pid: 0,
+        parent,
         name: [0; 24],
         pml4,
         heap_cursor,
         fb_va: 0,
         exit_code: 0,
+        state: ProcessState::Alive,
         threads_alive: 0,
+        channels: {
+            let mut table = alloc::vec::Vec::new();
+            table.resize(16, None);
+            table
+        },
         fds: {
             let mut table = alloc::vec::Vec::new();
             table.resize(24, None);
@@ -280,6 +297,19 @@ pub unsafe fn register_process(
     for (i, byte) in name.as_bytes().iter().take(23).enumerate() {
         (*process).name[i] = *byte;
     }
+
+    // Assign the pid and publish the process before the thread can run. The
+    // boot path and syscalls both execute with interrupts disabled, so the
+    // thread is not scheduled between these statements.
+    let pid = {
+        let mut sched = SCHED.lock();
+        let pid = sched.next_pid;
+        sched.next_pid += 1;
+        (*process).pid = pid;
+        sched.processes.push(process);
+        pid
+    };
+
     let thread = create_thread_raw(
         name,
         user_thread_entry as usize as u64,
@@ -289,20 +319,15 @@ pub unsafe fn register_process(
         pml4,
         process,
     );
-    let mut sched = SCHED.lock();
-    (*process).pid = sched.next_pid;
-    sched.next_pid += 1;
-    (*thread).pid = (*process).pid;
-    sched.processes.push(process);
-    let pid = (*process).pid;
-    drop(sched);
+    let _ = thread;
     crate::info!(
-        "spawn: pid {} '{}' entry {:#x} stack {:#x} cr3 {:#x}",
+        "spawn: pid {} '{}' entry {:#x} stack {:#x} cr3 {:#x} parent {}",
         pid,
         name,
         entry,
         stack_top,
-        pml4
+        pml4,
+        parent
     );
     pid
 }
@@ -374,6 +399,50 @@ pub fn current_pid() -> u64 {
     }
 }
 
+pub fn process_count() -> usize {
+    SCHED.lock().processes.len()
+}
+
+/// Find a process by pid. The returned pointer is stable while the scheduler
+/// lock is not held for long; callers run with interrupts disabled and only
+/// use it for a short, non-blocking operation.
+pub fn process_by_pid(pid: u64) -> *mut Process {
+    let sched = SCHED.lock();
+    sched
+        .processes
+        .iter()
+        .find(|&&process| unsafe { (*process).pid == pid })
+        .copied()
+        .unwrap_or(core::ptr::null_mut())
+}
+
+/// Block the current thread until an event wakes it. Used by IPC and WAIT.
+pub fn block_current() {
+    let thread = current_thread();
+    if thread.is_null() {
+        return;
+    }
+    unsafe {
+        (*thread).state = ThreadState::Blocked;
+        (*thread).wake_at = u64::MAX;
+    }
+    schedule();
+}
+
+/// Wake one specific thread (used by channel wait queues).
+pub fn wake_tid(tid: u64) {
+    let sched = SCHED.lock();
+    for &thread in &sched.threads {
+        unsafe {
+            if (*thread).tid == tid && (*thread).state == ThreadState::Blocked {
+                (*thread).state = ThreadState::Ready;
+                NEED_RESCHED.store(true, Ordering::Relaxed);
+                break;
+            }
+        }
+    }
+}
+
 /// Runtime information for `SystemInfo`.
 pub fn counts() -> (u32, u32, u64) {
     let sched = SCHED.lock();
@@ -408,8 +477,12 @@ pub fn list_processes(out: &mut [aster_abi::ProcessInfo]) -> usize {
                 .count() as u32;
             out[count] = aster_abi::ProcessInfo {
                 pid: (*process).pid,
-                threads: threads.max(1),
-                state: 0,
+                threads,
+                state: if (*process).state == ProcessState::Zombie {
+                    1
+                } else {
+                    0
+                },
                 name: (*process).name,
             };
         }
@@ -444,30 +517,118 @@ fn pick_next(sched: &mut Scheduler) -> *mut Thread {
 
 unsafe fn reap(sched: &mut Scheduler) {
     let current = sched.current;
-    let mut reaped_pids: alloc::vec::Vec<u64> = alloc::vec::Vec::new();
     let mut index = 0;
     while index < sched.threads.len() {
         let thread = sched.threads[index];
         if thread != current && (*thread).state == ThreadState::Dead {
-            let process = (*thread).process;
             let layout = Layout::from_size_align((*thread).kernel_stack_size, 16).unwrap();
             dealloc((*thread).kernel_stack_base as *mut u8, layout);
             drop(alloc::boxed::Box::from_raw(thread));
             sched.threads.remove(index);
-            if !process.is_null() && (*process).threads_alive == 0 {
-                reaped_pids.push((*process).pid);
-            }
         } else {
             index += 1;
         }
     }
-    for pid in reaped_pids {
+
+    // A zombie stays in the process table until its parent collects it. If the
+    // parent has already exited (or the process is PID 1), it is an orphan and
+    // is destroyed here.
+    let mut destroy: alloc::vec::Vec<u64> = alloc::vec::Vec::new();
+    for &process in &sched.processes {
+        if (*process).threads_alive == 0 && (*process).state == ProcessState::Zombie {
+            let parent = (*process).parent;
+            let parent_alive = parent != 0
+                && sched
+                    .processes
+                    .iter()
+                    .any(|&other| (*other).pid == parent && (*other).state == ProcessState::Alive);
+            if !parent_alive {
+                destroy.push((*process).pid);
+            }
+        }
+    }
+    for pid in destroy {
         if let Some(index) = sched.processes.iter().position(|&p| (*p).pid == pid) {
             let process = sched.processes.remove(index);
             crate::info!("reaped process {} '{}'", pid, name_of(process));
             vmm::destroy_user_pml4((*process).pml4);
             drop(alloc::boxed::Box::from_raw(process));
         }
+    }
+}
+
+/// Wake a process blocked in `WAIT`. The caller schedules immediately after.
+pub fn wake_pid(pid: u64) {
+    if pid == 0 {
+        return;
+    }
+    let sched = SCHED.lock();
+    let mut woke = false;
+    for &thread in &sched.threads {
+        unsafe {
+            if (*thread).pid == pid
+                && (*thread).state == ThreadState::Blocked
+                && (*thread).wake_at == u64::MAX
+            {
+                (*thread).state = ThreadState::Ready;
+                woke = true;
+            }
+        }
+    }
+    if woke {
+        NEED_RESCHED.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Wait for a child process to exit. `target == 0` waits for any child.
+/// Returns `(pid, status)`; the zombie's address space is reclaimed here.
+pub fn wait_child(target: u64) -> Result<(u64, i64), i64> {
+    use crate::syscall::errno;
+    loop {
+        let parent = current_pid();
+        let mut sched = SCHED.lock();
+
+        if let Some(index) = sched.processes.iter().position(|&process| unsafe {
+            (*process).parent == parent
+                && (*process).state == ProcessState::Zombie
+                && (target == 0 || (*process).pid == target)
+        }) {
+            let process = sched.processes.remove(index);
+            let (pid, status, pml4) =
+                unsafe { ((*process).pid, (*process).exit_code, (*process).pml4) };
+            drop(sched);
+            crate::info!(
+                "wait: pid {} collected by {} with status {}",
+                pid,
+                parent,
+                status
+            );
+            vmm::destroy_user_pml4(pml4);
+            unsafe { drop(alloc::boxed::Box::from_raw(process)) };
+            return Ok((pid, status));
+        }
+
+        if target != 0
+            && !sched
+                .processes
+                .iter()
+                .any(|&process| unsafe { (*process).pid == target && (*process).parent == parent })
+        {
+            return Err(errno::ECHILD);
+        }
+
+        let thread = current_thread();
+        if thread.is_null() {
+            return Err(errno::EINVAL);
+        }
+        unsafe {
+            (*thread).state = ThreadState::Blocked;
+            // u64::MAX is the "wait for an event" sentinel: the timer must not
+            // wake this thread, only wake_pid may.
+            (*thread).wake_at = u64::MAX;
+        }
+        drop(sched);
+        schedule();
     }
 }
 
@@ -613,9 +774,30 @@ pub fn exit_current(code: i64) -> ! {
         (*thread).state = ThreadState::Dead;
         (*thread).exit_code = code;
         let process = (*thread).process;
+        let mut parent = 0;
         if !process.is_null() {
+            // Close every IPC handle so peers blocked on this process wake up
+            // and observe a closed channel instead of waiting forever.
+            for slot in (*process).channels.iter_mut() {
+                if let Some(endpoint) = slot.take() {
+                    crate::ipc::release_endpoint(endpoint);
+                }
+            }
             (*process).exit_code = code;
             (*process).threads_alive = (*process).threads_alive.saturating_sub(1);
+            if (*process).threads_alive == 0 {
+                (*process).state = ProcessState::Zombie;
+                parent = (*process).parent;
+            }
+            crate::info!(
+                "exit: pid {} tid {} status {}",
+                (*process).pid,
+                (*thread).tid,
+                code
+            );
+        }
+        if parent != 0 {
+            wake_pid(parent);
         }
     }
     schedule();

@@ -1,0 +1,9 @@
+[package]
+name = "isoprobe"
+version = "0.2.0"
+edition = "2021"
+description = "Aster OS process isolation probe: private memory, known exit code"
+
+[[bin]]
+name = "isoprobe"
+path = "src/main.rs"

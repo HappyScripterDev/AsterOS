@@ -19,6 +19,19 @@
   and supports 1 MiB allocations, user copies require user/write permissions,
   anonymous frames carry an ownership bit, and NX/WP are enabled.
 - Added missing-disk and corrupt-volume handling; both boot to the desktop.
+- Implemented `SPAWN` and `WAIT`: a process gets a private address space and
+  an exit status that its parent collects from a zombie.
+- Contained every ring-3 exception, not only page faults; a faulting child
+  returns status -11 while the desktop continues.
+- Added boot-time address-space isolation tests and `tools/isolation_test.py`
+  with `isoprobe` (private page, exit 42) and `faultprobe` (kernel write).
+- Hardened the ELF loader: checked arithmetic, W^X, entry-in-executable and
+  overlapping-segment rejection.
+- Added native IPC channels: `CHANNEL_CREATE/SEND/RECV/CLOSE`, per-process
+  handles, bounded queues, blocking send/receive, wake-up and close/hangup.
+- Added a bootstrap handle to `SPAWN`, so a parent and child can communicate
+  immediately; verified with `ipcprobe` (ping-pong) and `ipchup` (forged handle,
+  hangup).
 
 ## Unreleased - light macOS-inspired redesign
 

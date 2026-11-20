@@ -2,7 +2,7 @@
 
 use crate::mm::{pmm, vmm};
 
-const TEST_VIRT: u64 = 0xFFFF_A000_0000_0000;
+const TEST_VIRT: u64 = 0xFFFF_B000_0000_0000;
 
 pub fn run() -> bool {
     if !frame_test() {
@@ -11,6 +11,10 @@ pub fn run() -> bool {
     }
     if !user_space_test() {
         crate::error!("mm self-test: user address space failed");
+        return false;
+    }
+    if !isolation_test() {
+        crate::error!("mm self-test: address-space isolation failed");
         return false;
     }
     true
@@ -53,6 +57,85 @@ fn frame_test() -> bool {
         return false;
     }
     pmm::free_frame(frame);
+    true
+}
+
+fn isolation_test() -> bool {
+    let before = pmm::free_kib();
+    let first = match vmm::create_user_pml4() {
+        Some(pml4) => pml4,
+        None => return false,
+    };
+    let second = match vmm::create_user_pml4() {
+        Some(pml4) => pml4,
+        None => {
+            vmm::destroy_user_pml4(first);
+            return false;
+        }
+    };
+
+    let mut first_cursor = vmm::USER_BASE;
+    let mut second_cursor = vmm::USER_BASE;
+    let first_address =
+        vmm::user_alloc(first, &mut first_cursor, 4096, vmm::PTE_WRITE | vmm::PTE_NX);
+    let second_address = vmm::user_alloc(
+        second,
+        &mut second_cursor,
+        4096,
+        vmm::PTE_WRITE | vmm::PTE_NX,
+    );
+    let (first_address, second_address) = match (first_address, second_address) {
+        (Ok(a), Ok(b)) => (a, b),
+        _ => {
+            vmm::destroy_user_pml4(first);
+            vmm::destroy_user_pml4(second);
+            return false;
+        }
+    };
+    if first_address != second_address {
+        return false;
+    }
+
+    if vmm::copy_to_user(first, first_address, b"first").is_err()
+        || vmm::copy_to_user(second, second_address, b"second").is_err()
+    {
+        return false;
+    }
+
+    let mut first_buffer = [0u8; 5];
+    let mut second_buffer = [0u8; 6];
+    if vmm::copy_from_user(first, first_address, &mut first_buffer).is_err()
+        || vmm::copy_from_user(second, second_address, &mut second_buffer).is_err()
+    {
+        return false;
+    }
+    if &first_buffer != b"first" || &second_buffer != b"second" {
+        return false;
+    }
+
+    let first_physical = vmm::translate(first, first_address);
+    let second_physical = vmm::translate(second, second_address);
+    if first_physical.is_none() || first_physical == second_physical {
+        return false;
+    }
+
+    // Kernel addresses must never validate as user buffers.
+    if vmm::user_leaf(first, vmm::KERNEL_BASE, false).is_some() {
+        return false;
+    }
+
+    vmm::destroy_user_pml4(first);
+    vmm::destroy_user_pml4(second);
+    let after = pmm::free_kib();
+    if before > after + 64 {
+        crate::error!(
+            "isolation test leaked {} KiB (before {} after {})",
+            before - after,
+            before,
+            after
+        );
+        return false;
+    }
     true
 }
 

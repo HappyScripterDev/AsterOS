@@ -1,0 +1,9 @@
+[package]
+name = "ipcprobe"
+version = "0.2.0"
+edition = "2021"
+description = "Aster OS IPC probe: receives a ping and replies with a pong"
+
+[[bin]]
+name = "ipcprobe"
+path = "src/main.rs"

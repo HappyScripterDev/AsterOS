@@ -5,6 +5,9 @@ members = [
     "kernel",
     "shared/aster-abi",
     "user/asterdesk",
+    "user/isoprobe",
+    "user/faultprobe",
+    "user/ipcprobe",
 ]
 
 [profile.release]

@@ -23,6 +23,7 @@ python tools/pointer_test.py
 python tools/wm_probe.py
 python tools/storage_probe.py
 python tools/persistence_test.py
+python tools/isolation_test.py
 
 # Boot/frame benchmark
 python tools/bench.py
@@ -119,6 +120,11 @@ desktop's own frame-time log. Results are recorded in
 | Window manager | Partial | Yes | drag/desktop probe; resize/snap manual; macOS-style traffic lights |
 | Launcher/control centre/theme | Yes | Yes | UI probes |
 | Terminal commands | Manual | Yes | `help`, `ls`, `cat`, `write`, `theme` |
+| Process spawn/wait | Implemented | Yes | `isolation_test.py`: status 42 and -11 collected |
+| Address-space isolation | Implemented | Yes | Boot memory self-test: same VA, different frames; kernel address rejected |
+| Child fault containment | Implemented | Yes | `faultprobe` faults; desktop still accepts input |
+| IPC ping-pong | Implemented | Yes | `ipcprobe`: 4-byte ping, 4-byte pong, status 0 |
+| IPC handle/hangup errors | Implemented | Yes | Forged handle `-3`; peer exit wakes receiver with `-14` |
 | Persistent home | Implemented | Yes | write/reboot/read plus host FAT verification |
 | Missing/corrupt data disk | Implemented | Yes | desktop boots; mount rejected; no fault |
 | Networking/audio | Not applicable | - | not implemented |

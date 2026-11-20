@@ -1,134 +1,127 @@
-# Inter-Process Communication (IPC)
+# Inter-Process Communication
 
-## 1. Status: designed, not implemented
+Status: **M3 core shipped** (2026-11-20). Two isolated processes exchange
+messages through kernel channels with bounded queues and blocking receive. The
+Terminal `ipc` and `ipchup` commands exercise the happy path, a forged handle
+and a hangup.
 
-The ABI reserves `CHANNEL_CREATE`, `CHANNEL_SEND`, and `CHANNEL_RECV`
-(`shared/aster-abi/src/lib.rs`). The kernel currently returns `ENOSYS` for all
-three. There is **no working IPC** in this build, and no UI or documentation
-claims otherwise.
+## 1. Model
 
-Today, data exchange happens through:
-
-- the global ramfs (all processes share it; no namespaces or permissions),
-- the framebuffer mapping (owned by the desktop; not multiplexed),
-- copied syscall buffers (request/response only, no asynchronous messages).
-
-This is sufficient for a single ring-3 shell with in-process apps, but it is
-not sufficient for services or sandboxed applications.
-
-## 2. Requirements for the first IPC implementation
-
-Functional:
-
-- Bidirectional message channels between two processes.
-- Fixed-size small messages (inline) and a path for bulk data.
-- Blocking send/receive with timeouts; wake-up via the scheduler.
-- Close/hangup semantics that unblock waiters with a distinct error.
-- No message loss under backpressure; bounded queues with a defined overflow
-  policy (block by default).
-
-Security:
-
-- A process may only send to a channel it holds a handle for.
-- Handles are process-local indices, not global pointers or pids.
-- The kernel validates every user buffer before reading or writing.
-- No kernel pointers, capabilities, or file descriptors are leaked in message
-  payloads; handle transfer is explicit and controlled.
-- Resource limits per process to prevent a channel flood from exhausting the
-  kernel heap.
-
-Performance:
-
-- Inline messages avoid allocation on the fast path.
-- Optional shared-memory handles for large payloads once VMM supports shared
-  mappings with explicit sharing (not implemented).
-- Copying a 64-byte message should be O(1) and not take a global lock that
-  blocks unrelated channels for long.
-
-## 3. Proposed design
-
-### Handles
-
-Each `Process` gets a channel table (like the fd table). `CHANNEL_CREATE`
-returns a handle pair: a send end and a receive end, each an index. A channel is
-a kernel object with two ring buffers (or one buffer with two cursors) and a
-reference count per direction. `CHANNEL_SEND(handle, buffer, length)` enqueues;
-`CHANNEL_RECV(handle, buffer, capacity)` dequeues.
-
-### Message layout
+A **channel** has two endpoints. Each endpoint is a handle in a process's table
+and owns a bounded FIFO of inline messages. Sending on one endpoint enqueues for
+the other endpoint; the channel is bidirectional because each endpoint can both
+send and receive.
 
 ```
-struct MessageHeader {
-    u32 length;        // payload bytes
-    u32 flags;         // e.g. CLOSE, ERROR, FUTURE_HANDLE_TRANSFER
-    u64 sender_pid;    // filled by the kernel
-    u64 sequence;      // per-channel monotonic counter
-}
+process A                          process B
+ handle 3 -> endpoint 0  <---->  endpoint 1 <- handle 3
+                queue for B        queue for A
 ```
 
-Initial payload limit: 256 bytes inline. Larger data must use ramfs or a future
-shared-memory object. This keeps the first implementation auditable and avoids
-a page-granular allocator in the channel path.
+Handles are per-process indices (3..15). They are never global pointers, pids or
+kernel addresses. A message carries only bytes; the kernel records the sender
+pid and a per-channel sequence number internally for diagnostics.
 
-### Blocking and fairness
+## 2. API
 
-- `send` blocks when the channel is full, with an optional timeout in ms.
-- `recv` blocks when empty; timeout and close both return defined errors.
-- Waiters are queued per direction and woken in FIFO order by the scheduler.
-- Interrupts are disabled only while manipulating channel state, never while
-  copying a user buffer.
+| Call | Arguments | Result |
+|---|---|---|
+| `CHANNEL_CREATE` (24) | pointer to `u32[2]` | writes the two handle indices, returns 0 |
+| `CHANNEL_SEND` (25) | handle, pointer, length | bytes queued; blocks if the peer queue is full |
+| `CHANNEL_RECV` (26) | handle, pointer, capacity | bytes copied; blocks if empty |
+| `CHANNEL_CLOSE` (32) | handle | 0, or `EBADF` |
 
-### Transfer of handles
+Limits:
 
-Not in v1. When added, a handle transfer must be an explicit flag plus a
-kernel-mediated table insertion on the receiver, never a raw index passed as
-data, otherwise a process could guess another process's handles.
+- 256-byte inline payload, 8 messages per queue, 32 live channels.
+- 16 handle slots per process, indices 3..15 (0..2 are reserved).
+- A send larger than 256 bytes returns `EINVAL`; a receive buffer smaller than
+  the next message returns `EINVAL` without consuming it.
 
-### Bootstrapping
+## 3. Bootstrap
 
-When `SPAWN` exists, the parent creates a channel and places the child's send
-handle in the child's initial handle table at a known index (e.g. 3). The child
-receives a bootstrap channel on startup. A service manager uses this to talk to
-each service.
+`SPAWN(path, bootstrap_handle)` duplicates one endpoint into the child's first
+free handle slot, which is 3 for a fresh process. The parent keeps its own
+handle to the other endpoint. The convention is documented so a child can use
+handle 3 without an argv protocol:
 
-## 4. Alternatives considered
+```
+parent: create -> handles 3 (A), 4 (B)
+parent: spawn("/home/user/ipcprobe.elf", 4)
+child:  receives B at handle 3
+```
 
-| Option | Pros | Cons | Decision |
-|---|---|---|---|
-| Shared memory only | Fastest, simple kernel | No synchronisation, hard to sandbox, pointer sharing | Rejected for control messages; future bulk path |
-| Unix-style sockets | Familiar, flexible | Large surface, filesystem namespace coupling | Rejected for v1 |
-| Microkernel ports (seL4-style) | Strong isolation, capability-based | Requires capability system and endpoint objects; more work | Long-term direction, incremental |
-| Syscall-mediated mailbox | Small kernel surface, easy validation | Copies messages, less flexible | Selected for v1 |
+The duplicate increments the endpoint's reference count. Closing the parent's
+copy does not hang up while the child still holds its own reference.
 
-## 5. Security threats and mitigations
+## 4. Blocking and wake-up
+
+`CHANNEL_RECV` on an empty queue with the peer still open:
+
+1. records the current tid in the endpoint's receive-waiter list,
+2. marks the thread `Blocked` with `wake_at = u64::MAX` (the event sentinel),
+3. calls the scheduler.
+
+A successful send pops one receive waiter and marks it `Ready`; a successful
+receive pops one send waiter. `schedule` then switches to the woken thread.
+
+`CHANNEL_SEND` blocks while the peer queue is full. The receiver wakes one
+blocked sender after draining a message.
+
+The syscall gate runs with interrupts disabled. The channel lock is dropped
+before `schedule()` and no kernel lock is held across a user copy. The single
+CPU means no other process can run between the state check and the block, so a
+wakeup cannot be lost.
+
+## 5. Close, exit and errors
+
+- Closing a handle drops its endpoint reference.
+- The last reference closes that endpoint and wakes every waiter on both
+  endpoints. A blocked receiver then returns `EPIPE` once the queue is empty.
+- `exit_current` closes all of the process's handles before the process becomes
+  a zombie. A peer blocked on a dead process therefore wakes with `EPIPE`
+  instead of waiting forever.
+- `EBADF` for an unknown or closed handle; `EPIPE` for a closed peer;
+  `EINVAL` for bad sizes or user pointers; `ENOSPC` when the channel table is
+  full.
+
+There is no timeout yet: `ETIMEDOUT` is reserved. A malicious process cannot
+block the kernel: it can only block itself, and its peers are bounded by the
+queue and channel limits.
+
+## 6. Security
 
 | Threat | Mitigation |
 |---|---|
-| Fake sender pid | Kernel fills `sender_pid` from the calling thread; payload cannot override |
-| Cross-channel handle guessing | Handle indices are validated against the caller's table |
-| Kernel heap exhaustion via messages | Per-process channel and byte quotas; `ENOSPC` on overflow |
-| Deadlock between two services | Timeouts on both ends; close unblocks waiters; no kernel lock held during copy |
-| Message contents executed as pointers | Messages are data only; no kernel pointer dereference |
-| Starvation | Fair FIFO wake-ups, per-channel quotas, scheduler quantum for user threads |
+| Guessing another process's handle | Handles are indices into the caller's table; the kernel never accepts a raw channel id |
+| Sending to a channel not owned | `endpoint_for_handle` validates the table entry |
+| Kernel pointer leak | Messages are copied byte arrays; no handles or kernel addresses are placed in payloads |
+| Queue flood | 8 messages × 256 bytes per queue, 32 channels, per-process handle limit |
+| Deadlock on peer exit | Exit closes handles and wakes waiters with `EPIPE` |
+| Use-after-free of a process | Channel operations run in syscalls with interrupts disabled; the process is only destroyed after its thread is dead and reaped |
 
-## 6. Test plan
+Known gaps: no capability layer, no per-service policy, no shared memory for
+bulk data, no handle transfer between arbitrary processes, and no timeout.
+These are explicit, not hidden.
 
-1. Kernel unit tests for the channel ring buffer and quota accounting.
-2. Two ring-3 test processes once `SPAWN` exists: ping-pong 10,000 messages,
-   verify sequence and payload.
-3. Backpressure test: sender fills the queue, receiver drains; assert no message
-   loss and no kernel panic.
-4. Timeout test: `recv` with no sender returns `ETIMEDOUT`; close returns
-   `EPIPE`.
-5. Security test: a process attempts to send on a guessed handle; expect
-   `EBADF`.
-6. Stress: 16 channels × 64 KiB/s for 30 s; check kernel heap and PMM stability.
+## 7. Tests
 
-## 7. Follow-ups
+`tools/isolation_test.py` runs:
 
-- Decide whether `CHANNEL_CREATE` is one call returning two handles or two
-  calls (`channel_create` + `channel_pair`) for clarity.
-- Define how channels are inherited across `SPAWN` (currently: no inheritance).
-- Align error codes with `aster_abi::errno` (`EPIPE`, `ETIMEDOUT`, `ENOSPC`).
-- Expose channel handles through the planned capability system instead of
-  plain per-process indices.
+- `ipc`: create a channel, spawn `ipcprobe`, send `ping`, receive `pong`,
+  collect status 0.
+- `ipchup`: send on unused handle 15 (expect `-3`), spawn `isoprobe` with a
+  bootstrap handle, close the parent's copy, receive (expect `-14` after the
+  child exits), collect status 42.
+
+The serial log must contain all of the status lines, `DESKTOP-READY`, and no
+kernel panic. The desktop must still accept the `uname` command afterwards.
+
+## 8. Follow-ups
+
+1. Timeouts and non-blocking flags (`ETIMEDOUT`, `EAGAIN`).
+2. Bulk transfers through shared memory with refcounted pages.
+3. Explicit handle passing between arbitrary processes.
+4. Per-process quotas and a channel close-on-exit audit trail.
+5. A service manager using bootstrap channels in dependency order.
+6. Move the storage filesystem behind a storage service (M4).

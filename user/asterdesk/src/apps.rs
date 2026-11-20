@@ -362,13 +362,15 @@ pub struct TerminalApp {
     history_index: usize,
 
     cwd: String,
+
+    last_pid: u64,
 }
 
 impl TerminalApp {
     fn new() -> Self {
         let mut lines = Vec::new();
 
-        lines.push("Aster Terminal 0.1.0".to_string());
+        lines.push("Aster Terminal 0.2.0".to_string());
 
         lines.push("Type `help` for the command list.".to_string());
 
@@ -388,6 +390,8 @@ impl TerminalApp {
             history_index: 0,
 
             cwd: "/".to_string(),
+
+            last_pid: 0,
         }
     }
 
@@ -429,6 +433,12 @@ impl TerminalApp {
                     "  ps / free            kernel counters",
                     "  appearance            show the active appearance",
                     "  accent <name>        change the accent colour",
+                    "  spawn <path>         start an isolated process",
+                    "  wait [pid]           collect a child exit status",
+                    "  isolation            run the isolation probes",
+                    "  ipc                  run the channel IPC probe",
+                    "  ipchup               forged handle and hangup checks",
+                    "  systest              invalid syscall argument checks",
                     "  open <app>           launch an application",
                     "  echo <text>          print text",
                     "  clear                clear the screen",
@@ -600,6 +610,187 @@ impl TerminalApp {
 
                     self.lines.push(usage);
                 }
+            }
+
+            "spawn" => {
+                if let Some(path) = args.first() {
+                    let pid = sys::spawn(path);
+
+                    if pid > 0 {
+                        self.last_pid = pid as u64;
+
+                        let message = format!("spawned pid {}: {}", pid, path);
+
+                        sys::log(message.as_bytes());
+
+                        self.lines.push(message);
+                    } else {
+                        self.lines.push(format!("spawn failed: {}", pid));
+                    }
+                } else {
+                    self.lines.push("usage: spawn <path>".to_string());
+                }
+            }
+
+            "wait" => {
+                let pid = args
+                    .first()
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .unwrap_or(self.last_pid);
+
+                if pid == 0 {
+                    self.lines.push("usage: wait <pid>".to_string());
+                } else {
+                    let mut status = 0i64;
+
+                    let child = sys::wait(pid, &mut status);
+
+                    if child > 0 {
+                        let message = format!("pid {} exited with status {}", child, status);
+
+                        sys::log(message.as_bytes());
+
+                        self.lines.push(message);
+                    } else {
+                        self.lines.push(format!("wait failed: {}", child));
+                    }
+                }
+            }
+
+            "isolation" => {
+                let probe = "/home/user/isoprobe.elf";
+                let fault = "/home/user/faultprobe.elf";
+
+                let first = sys::spawn(probe);
+                let second = sys::spawn(fault);
+
+                self.lines
+                    .push(format!("isolation: spawned pids {} and {}", first, second));
+
+                for pid in [first, second] {
+                    if pid <= 0 {
+                        self.lines.push(format!("isolation: spawn failed: {}", pid));
+                        continue;
+                    }
+
+                    let mut status = 0i64;
+
+                    let child = sys::wait(pid as u64, &mut status);
+
+                    let message = format!("isolation: pid {} status {}", child, status);
+
+                    sys::log(message.as_bytes());
+
+                    self.lines.push(message);
+                }
+            }
+
+            "ipc" => {
+                let Some((first, second)) = sys::channel_create() else {
+                    self.lines.push("ipc: channel creation failed".to_string());
+
+                    return None;
+                };
+
+                let pid = sys::spawn_with_handle("/home/user/ipcprobe.elf", second);
+
+                if pid <= 0 {
+                    sys::channel_close(first);
+                    sys::channel_close(second);
+
+                    self.lines.push(format!("ipc: spawn failed: {}", pid));
+
+                    return None;
+                }
+
+                let sent = sys::channel_send(first, b"ping");
+                let mut buffer = [0u8; 64];
+                let received = sys::channel_recv(first, &mut buffer);
+
+                let reply = if received > 0 {
+                    String::from_utf8_lossy(&buffer[..received as usize]).to_string()
+                } else {
+                    format!("error {}", received)
+                };
+
+                let message = format!(
+                    "ipc: sent {} bytes, received {} bytes: {}",
+                    sent, received, reply
+                );
+
+                sys::log(message.as_bytes());
+
+                self.lines.push(message);
+
+                sys::channel_close(first);
+                sys::channel_close(second);
+
+                let mut status = 0i64;
+
+                let child = sys::wait(pid as u64, &mut status);
+                let message = format!("ipc: pid {} status {}", child, status);
+
+                sys::log(message.as_bytes());
+
+                self.lines.push(message);
+            }
+
+            "ipchup" => {
+                let forged = sys::channel_send(15, b"x");
+
+                let message = format!("ipc: forged handle {}", forged);
+
+                sys::log(message.as_bytes());
+
+                self.lines.push(message);
+
+                let Some((first, second)) = sys::channel_create() else {
+                    self.lines.push("ipc: channel creation failed".to_string());
+
+                    return None;
+                };
+
+                let pid = sys::spawn_with_handle("/home/user/isoprobe.elf", second);
+
+                sys::channel_close(second);
+
+                let mut buffer = [0u8; 16];
+                let received = sys::channel_recv(first, &mut buffer);
+
+                let message = format!("ipc: hangup {}", received);
+
+                sys::log(message.as_bytes());
+
+                self.lines.push(message);
+
+                sys::channel_close(first);
+
+                if pid > 0 {
+                    let mut status = 0i64;
+
+                    let child = sys::wait(pid as u64, &mut status);
+                    let message = format!("ipc: pid {} status {}", child, status);
+
+                    sys::log(message.as_bytes());
+
+                    self.lines.push(message);
+                }
+            }
+
+            "systest" => {
+                let stat = sys::raw(aster_abi::sys::STAT, 1, 0, 0);
+                let log = sys::raw(aster_abi::sys::LOG, 0xFFFF_FFFF_8000_0000, 4, 0);
+                let open = sys::raw(aster_abi::sys::OPEN, 0xDEAD_0000, 1, 0);
+                let wait = sys::raw(aster_abi::sys::WAIT, 0, 0, 0);
+
+                let message = format!(
+                    "systest: stat {} log {} open {} wait {}",
+                    stat, log, open, wait
+                );
+
+                sys::log(message.as_bytes());
+
+                self.lines.push(message);
             }
 
             "open" => match args.first().copied() {

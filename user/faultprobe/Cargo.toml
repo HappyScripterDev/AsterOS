@@ -1,0 +1,9 @@
+[package]
+name = "faultprobe"
+version = "0.2.0"
+edition = "2021"
+description = "Aster OS fault containment probe: writes to kernel memory"
+
+[[bin]]
+name = "faultprobe"
+path = "src/main.rs"
