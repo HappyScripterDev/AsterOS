@@ -30,15 +30,16 @@ DATA_IMAGE = ROOT / "build" / "data.img"
 SERIAL_LOG = ROOT / "build" / "serial.log"
 
 
-def drive_args(include_data: bool = True) -> list[str]:
+def drive_args(include_data: bool = True, data_path: Path | None = None) -> list[str]:
     """QEMU drive arguments shared by the runner and every probe.
 
     The data disk is optional: tests that need a deterministic volume use a
     temporary copy instead of build/data.img.
     """
     args = ["-drive", f"file={IMAGE},format=raw,if=ide,index=0"]
-    if include_data and DATA_IMAGE.exists():
-        args += ["-drive", f"file={DATA_IMAGE},format=raw,if=ide,index=1"]
+    path = data_path or DATA_IMAGE
+    if include_data and path.exists():
+        args += ["-drive", f"file={path},format=raw,if=ide,index=1"]
     return args
 
 

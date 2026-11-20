@@ -39,9 +39,9 @@ Remaining:
 
 | Item | Acceptance |
 |---|---|
-| IPC channels | Two ring-3 processes exchange 10k messages without loss; handle forgery returns EBADF |
-| `SPAWN`/`WAIT` | Shell can start a child process, wait, and collect its exit code |
-| Per-process isolation hardening | Guard pages, SMEP/SMAP/UMIP, quotas |
+| IPC channels | DONE (M3): ping-pong between isolated processes; forged handle EBADF; hangup EPIPE |
+| `SPAWN`/`WAIT` | DONE (M2): shell starts children, waits, collects 42 and -11 |
+| Per-process isolation hardening | Address spaces and W^X work; guard pages, SMEP/SMAP/UMIP and quotas remain |
 | APIC + IOAPIC | Timer and keyboard work without the 8259; no spurious IRQs under load |
 | SMP | Two vCPUs boot, schedule, and pass stress tests; per-CPU data and TLB shootdown |
 | Demand paging / COW | User memory is mapped lazily; fork-like sharing is safe |
@@ -57,9 +57,9 @@ Remaining:
 | PCI enumeration | - | Enumerate q35 devices, map BARs, log vendor/device |
 | ACPI tables | - | Parse RSDP/XSDT/MADT; discover CPUs and the I/O APIC |
 | VirtIO block | PCI, VMM | Read/write a raw image in QEMU, verified by host comparison |
-| AFS v1 (read-only) | block driver | Mount a signed test image; checksums verified |
+| Persistent filesystem | block driver | DONE (M1): FAT32 home, write/reboot/read verified; no journal yet |
 | AFS v2 (journal/COW) | AFS v1 | Crash-injection tests recover without corruption |
-| Service manager + init | SPAWN, IPC | Services restart independently; desktop survives a service crash |
+| Service manager + init | SPAWN, IPC | NEXT (M4): services restart independently; desktop survives a service crash |
 
 ## Phase 5 - Graphics (PARTIAL)
 

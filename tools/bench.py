@@ -15,7 +15,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from image import build_data_image  # noqa: E402
 from run import Qmp, drive_args, find_ovmf, find_qemu  # noqa: E402
+from seeds import SEED_FILES  # noqa: E402
 
 MARKERS = [
     ("BOOT-LOADER-START", "firmware handed control to Aster Boot"),
@@ -32,13 +34,17 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     serial = out / "serial.log"
     serial.write_text("")
+    # A fresh volume with default settings: brightness 1.0, no journal state.
+    # Reusing build/data.img would measure whatever the last UI probe changed.
+    data = out / "data.img"
+    build_data_image(str(data), SEED_FILES)
     port = 4467
     cmd = [
         find_qemu(), "-machine", "q35", "-cpu", "max", "-smp", "1", "-m", "512M",
         "-drive", f"if=pflash,format=raw,readonly=on,file={find_ovmf()}",
         "-device", "VGA", "-rtc", "base=localtime", "-no-reboot",
         "-serial", f"file:{serial}", "-monitor", "none",
-        *drive_args(),
+        *drive_args(data_path=data),
         "-display", "none", "-vnc", "127.0.0.1:8",
         "-qmp", f"tcp:127.0.0.1:{port},server=on,wait=off",
     ]
@@ -55,7 +61,7 @@ def main() -> None:
                 if marker not in seen and marker in text:
                     seen[marker] = round(time.monotonic() - start, 3)
             time.sleep(0.02)
-        time.sleep(8.0)
+        time.sleep(11.0)
         qmp.command("quit")
         qmp.close()
         results.update({marker: seen.get(marker) for marker, _ in MARKERS})
@@ -68,7 +74,7 @@ def main() -> None:
 
     text = serial.read_text(errors="replace")
     for line in text.splitlines():
-        if "memory:" in line or "frame 1 at" in line or "frames," in line:
+        if "memory:" in line or "frame 1 at" in line or "frames," in line or "frame 120 at" in line:
             results.setdefault("log", "")
             results["log"] += line.strip() + "\n"
     print("Aster OS benchmark")

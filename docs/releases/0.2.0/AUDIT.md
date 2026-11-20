@@ -5,11 +5,17 @@ Baseline: `v0.1.0-baseline` (`fc8caf3`, branch `milestone/aster-0.2-core`)
 Detailed baseline audit: [../../roadmap/ASTER_0.2_AUDIT.md](../../roadmap/ASTER_0.2_AUDIT.md)
 Roadmap: [../../roadmap/ASTER_0.2_ROADMAP.md](../../roadmap/ASTER_0.2_ROADMAP.md)
 
-This page is the release-facing summary. The detailed audit records the
-pre-change state; this page records what changed in the first 0.2 milestone and
-what remains.
+## 1. Result
 
-## 1. Verified baseline (0.1.0)
+Aster OS 0.2.0 reaches the **core milestone**: isolated processes, validated
+syscalls, native IPC and persistent storage are implemented and verified. The
+desktop, all nine applications and the original boot path still work.
+
+Not delivered: a service manager, per-process memory quotas, IPC timeouts and
+bulk shared memory, SMEP/SMAP/UMIP, ASLR, guard pages and app extraction. They
+are listed as follow-ups, not implied by the release.
+
+## 2. Verified baseline (0.1.0)
 
 - Build, host image tests, boot smoke and UI probes passed before any change.
 - Boot to first frame: 5.30 s wall, 2.25 s in-guest.
@@ -19,51 +25,84 @@ what remains.
   machine.
 - The desktop was one ring-3 process with nine in-process applications.
 
-## 2. M1 result: persistent home volume
-
-Shipped:
+## 3. M1: persistent home volume
 
 | Component | Evidence |
 |---|---|
-| PCI config + AHCI driver | Boot log: `ahci: 2 disk(s) ready`, IDENTIFY model and sector counts |
-| GPT parsing | Data partition found at LBA 2048 with a verified header CRC |
+| PCI config + AHCI | `ahci: 2 disk(s) ready`, IDENTIFY model and sector counts |
+| GPT parsing | Data partition at LBA 2048, header CRC verified |
 | FAT32 mount | `storage: FAT32 'ASTERDATA' mounted, 130552 clusters of 4096 bytes` |
-| Read/write/create/mkdir/unlink | Boot self-test creates, reads, truncates and removes a file and a directory |
-| Persistent home | `tools/persistence_test.py`: guest writes, host verifier parses, reboot, guest reads back |
-| Settings persistence | Accent change survives the reboot; host verifier checks `SETTINGS.CNF` |
-| Real capacity reporting | Settings > Storage shows 509.9 MiB total/free and mount state |
-| Missing disk | Boot reaches the desktop; log: `storage: no persistent volume mounted` |
-| Corrupt volume | Zeroed FAT boot sector is rejected; desktop starts; no fault |
-| Kernel hardening | Full user-exception containment, PMM frame bounds, mapping rollback, heap coalescing/1 MiB, user-copy permissions, `PTE_OWNED`, NX/WP, ELF W^X |
+| Create/read/write/mkdir/unlink | Boot self-test creates, reads, truncates and removes files and a directory |
+| Reboot persistence | `tools/persistence_test.py`: guest writes, host verifier parses, reboot, guest reads back |
+| Settings persistence | Accent change survives the reboot; host verifies `SETTINGS.CNF` |
+| Capacity reporting | Settings > Storage shows 509.9 MiB total/free and mount state |
+| Missing/corrupt disk | Boot reaches the desktop; mount rejected; no fault |
 
-Measured after M1:
+## 4. M2: process isolation
+
+- `SPAWN(path)` loads an ELF from the VFS or a boot module, validates it
+  (bounds, W^X, entry in RX, no overlaps), creates a private PML4, maps a stack
+  and registers the child with its parent.
+- `WAIT(pid, &status)` blocks until a child is a zombie, destroys its address
+  space and returns the exact status. Orphans are reaped.
+- Every user exception is contained: a child that writes to kernel memory exits
+  with status -11 while the desktop survives.
+- Boot self-test maps the same VA in two address spaces to different frames,
+  verifies private writes, rejects kernel addresses as user buffers and checks
+  frame reclamation.
+- Evidence: `tools/isolation_test.py` prints status 42 and -11, then the
+  desktop still accepts `uname`.
+
+## 5. M3: IPC
+
+- `CHANNEL_CREATE/SEND/RECV/CLOSE`, per-process handles, 8 x 256 B queues,
+  blocking send/receive and close/hangup.
+- `SPAWN(path, handle)` duplicates one endpoint into the child at handle 3.
+- Evidence: `ipc` returns `pong` and child status 0; `ipchup` reports `-3` for a
+  forged handle and `-14` after the peer exits; `systest` reports `-5` for four
+  invalid syscall arguments.
+- No timeouts, shared memory or arbitrary handle transfer yet.
+
+## 6. Measured performance (clean volume, QEMU TCG)
 
 | Metric | Value |
 |---|---|
-| Firmware to first frame | 4.69 s |
-| Kernel ready | 1.69 s |
-| Desktop init (in guest) | 2.15 s |
-| Free RAM after desktop | 398 MiB of 510 MiB |
-| Volume | 512 MiB disk, 509.9 MiB FAT32, 4 KiB clusters |
+| OVMF to Aster Boot | 1.455 s |
+| Kernel loaded, ExitBootServices | 1.647 s |
+| Kernel initialised | 1.672 s |
+| Desktop initialised | 4.643 s |
+| First compositor frame | 4.751 s |
+| Steady frame (frame 120) | 47.2 ms average |
+| Free RAM after desktop heap | 397 MiB of 510 MiB |
+| Kernel heap | 2048 KiB |
 
-## 3. Remaining gaps for 0.2.0
+A separate run with the interactive volume's brightness at 0.97 measured
+77-79 ms per frame. The dimming overlay blends the full 1280x800 surface every
+frame; it is a real cost of that setting, not a regression. Benchmarks now
+create a clean volume with brightness 1.00.
 
-1. **Process isolation**: `SPAWN`, `WAIT`, zombie/exit-status handling and
-   per-process quotas are still absent. The desktop remains PID 1 and apps
-   share its address space.
-2. **IPC**: channel syscalls still return `ENOSYS`; there are no handles, wait
-   queues or blocking receive.
-3. **System services**: nothing has been extracted; the kernel owns the
-   filesystem.
-4. **Storage limits**: 8.3 names, no journal, no permissions, single volume,
-   single-sector DMA.
-5. **Security gaps**: no SMEP/SMAP/UMIP, no capabilities, no ASLR, no kernel
-   stack guards.
-6. **Performance**: full-frame composition, eager 48 MiB desktop heap, no
-   damage tracking.
+## 7. Definition of done
 
-## 4. Honest status
+| Requirement | State |
+|---|---|
+| Boots reliably; desktop and apps work | PASS |
+| Isolated address spaces per process | PASS |
+| Memory permissions / user-kernel separation | PASS (NX, W^X, CR0.WP, user/write checks) |
+| Process termination releases resources | PASS (zombies, owned-frame teardown; no quotas) |
+| IPC between isolated processes | PASS |
+| Invalid IPC handled safely | PASS (EBADF, EPIPE) |
+| Persistent storage; data survives reboot | PASS |
+| Syscall argument validation | PASS (probe + review; SHUTDOWN still unprivileged) |
+| Regression and new core tests | PASS |
+| Performance and limitations documented | PASS |
+| Service architecture started | NOT DONE (M4) |
 
-Aster OS 0.2.0 is **not complete**. The first milestone is complete and
-verified. Process isolation and IPC are the next milestone and are prerequisites
-for service extraction.
+## 8. Remaining work for the next milestone
+
+1. Service manager and the first extracted service (storage or process service).
+2. Per-process page quotas and a global memory reserve.
+3. IPC timeouts, shared memory and handle transfer.
+4. Guard pages, ASLR, SMEP/SMAP/UMIP.
+5. Moving built-in apps to separate processes with window surfaces.
+6. 8.3-name removal (VFAT long names) and journaling for the persistent volume.
+7. Damage tracking and a faster brightness path.

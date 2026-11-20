@@ -146,11 +146,11 @@ Details: [docs/architecture/OVERVIEW.md](docs/architecture/OVERVIEW.md),
 | OVMF firmware to Aster Boot | 1.42 s |
 | Aster Boot + kernel handoff | 1.62 s |
 | Kernel initialised | 1.64 s |
-| Desktop ready | 4.54 s |
-| First compositor frame | 4.69 s |
-| Frame time (1280x800 software, idle) | ~52-60 ms |
+| Desktop ready | 4.64 s |
+| First compositor frame | 4.75 s |
+| Frame time (1280x800 software, idle) | ~47-60 ms |
 | Frame time with several windows open | ~80 ms |
-| Memory free after desktop init | 398 MiB of 510 MiB |
+| Memory free after desktop init | 397 MiB of 510 MiB |
 
 Method and caveats: [docs/benchmarks/2026-11-20.md](docs/benchmarks/2026-11-20.md).
 These numbers are for QEMU's software CPU emulation and are not comparable to

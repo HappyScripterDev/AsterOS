@@ -1,6 +1,6 @@
 # Aster OS - Project Status
 
-Version: **0.2.0 core milestone**
+Version: **0.2.0 core milestone** (M1 storage, M2 process isolation, M3 IPC complete)
 Date: 2026-11-20
 Kernel: Aster 0.2.0 (higher half, x86_64)
 ABI: Aster ABI 1
@@ -30,7 +30,7 @@ Desktop: Aster Desktop (ring 3, light macOS-inspired shell, software compositor)
 | 0 Research/architecture | COMPLETED | Research, ADRs, design system, threat model |
 | 1 Build infrastructure | COMPLETED | Reproducible image, QEMU runner, firmware fetch, tests |
 | 2 First boot | COMPLETED | UEFI -> higher-half kernel -> serial |
-| 3 Core kernel | PARTIAL | Memory, interrupts, scheduler, syscalls, spawn/wait and IPC done; service manager, APIC/SMP and demand paging missing |
+| 3 Core kernel | PARTIAL | Memory, interrupts, scheduler, syscalls, spawn/wait, IPC and persistence done; service manager, APIC/SMP and demand paging missing |
 | 4 Drivers/user space | PARTIAL | Serial, GOP, PS/2, PCI config, AHCI, GPT/FAT32; ACPI/APIC/service manager missing |
 | 5 Graphics/desktop | PARTIAL | Compositor, WM, shell, settings; damage tracking, HiDPI, accessibility, GPU missing |
 | 6 Applications | PARTIAL | 9 real apps; Store/Installer/Update/Browser deliberately absent |
@@ -95,6 +95,7 @@ Desktop: Aster Desktop (ring 3, light macOS-inspired shell, software compositor)
 | ID | Task | State | Acceptance |
 |---|---|---|---|
 | K0 | Persistent home volume | COMPLETE (M1) | Write, reboot, read verified by host parser; corrupt/missing disk handled |
+| M4 | Service manager + first service | NEXT | A service starts over a bootstrap channel and survives/restarts independently |
 | K1 | Implement IPC channels | CORE COMPLETE (M3) | `ipc`/`ipchup`: ping-pong, forged handle -3, hangup -14 |
 | K2 | Implement `SPAWN`/`WAIT` | COMPLETE (M2) | Isolation command spawns two children, reports 42 and -11, desktop survives |
 | K3 | Move apps to separate processes | NEXT (K1/K2 done) | Closing/crashing an app leaves the desktop alive |
@@ -115,9 +116,9 @@ Desktop: Aster Desktop (ring 3, light macOS-inspired shell, software compositor)
   reports the current count.
 - Kernel image: ~2.3 MiB ELF (debug info included).
 - Desktop image: ~2.3 MiB ELF.
-- Boot: 4.69 s to first frame on QEMU TCG; kernel ready at 1.69 s.
-- Idle after desktop: 398 MiB free of 510 MiB (48 MiB desktop heap included).
-- Frame: ~52-60 ms idle, ~80 ms with several windows open, software rendering.
+- Boot: 4.75 s to first frame on QEMU TCG; kernel ready at 1.67 s.
+- Idle after desktop: 397 MiB free of 510 MiB (48 MiB desktop heap included).
+- Frame: ~47-60 ms idle, ~80 ms with several windows open or brightness below 100%, software rendering.
 
 ## Naming note
 

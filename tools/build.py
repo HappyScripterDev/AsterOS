@@ -51,6 +51,7 @@ def find_cargo() -> str:
 CARGO = find_cargo()
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from image import build_data_image, build_image, verify_image  # noqa: E402
+from seeds import SEED_FILES  # noqa: E402
 
 
 def run(cmd: list[str], **kwargs) -> None:
@@ -142,27 +143,8 @@ def build(clean: bool = False, modules: bool = True, desktop: bool = True, fresh
     # it across builds unless the caller explicitly asks for a fresh one.
     data = BUILD / "data.img"
     if fresh_data or not data.exists():
-        # First-boot contents. They are written once: later builds keep the
-        # volume so user edits survive.
-        seeds = {
-            "/WELCOME.TXT": (
-                b"Welcome to Aster OS.\n\n"
-                b"This home directory lives on the persistent data volume.\n"
-                b"Files here survive a reboot.\n"
-            ),
-            "/SETTINGS.CNF": (
-                b"theme=light\naccent=blue\nanimations=1.00\n"
-                b"wallpaper=0\nreduce_motion=0\nbrightness=1.00\n"
-            ),
-            "/NOTES/IDEAS.TXT": (
-                b"Ideas\n-----\n"
-                b"- Native compositor with real window management\n"
-                b"- Persistent home volume\n"
-                b"- Process isolation and IPC\n"
-            ),
-            "/DOCS/README.TXT": b"Documents saved here persist across reboots.\n",
-        }
-        build_data_image(str(data), seeds)
+        # First-boot contents are shared with the tests and benchmark.
+        build_data_image(str(data), SEED_FILES)
         print(f"  data image: {data} ({data.stat().st_size // (1024 * 1024)} MiB, fresh)")
     else:
         print(f"  data image: {data} (kept)")

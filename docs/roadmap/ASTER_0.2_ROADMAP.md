@@ -29,6 +29,10 @@ Non-goals for 0.2:
 
 ## 3. Milestones
 
+Status: M1, M2 (core) and M3 (core) are complete and verified. M4 is next.
+The unmet parts of M2 (quotas, guard pages, ASLR) and M3 (timeouts, shared
+memory, handle transfer) are tracked explicitly.
+
 ### M1 - Persistent home volume (COMPLETE, 2026-11-20)
 
 Goal: user files, Notes, Settings, and the wallpaper choice survive a reboot.

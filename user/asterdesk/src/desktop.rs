@@ -559,6 +559,8 @@ impl Desktop {
 
             let count = sys::poll_input(&mut events);
 
+            let after_input = sys::time_ms();
+
             for event in &events[..count] {
                 self.handle_event(event);
             }
@@ -570,6 +572,8 @@ impl Desktop {
             self.wm.tick(&self.theme);
 
             self.draw(now);
+
+            let after_draw = sys::time_ms();
 
             let elapsed = sys::time_ms().saturating_sub(frame_start);
 
@@ -588,10 +592,12 @@ impl Desktop {
 
                 sys::log(
                     format!(
-                        "desktop: frame {} at {} ms, {:.1} ms avg",
+                        "desktop: frame {} at {} ms, {:.1} ms avg (input {} draw {})",
                         self.frames,
                         sys::time_ms(),
-                        average
+                        average,
+                        after_input.saturating_sub(frame_start),
+                        after_draw.saturating_sub(after_input)
                     )
                     .as_bytes(),
                 );

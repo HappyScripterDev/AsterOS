@@ -18,27 +18,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from image import build_data_image, verify_image  # noqa: E402
 from run import Qmp, find_ovmf, find_qemu, IMAGE  # noqa: E402
+from seeds import SEED_FILES  # noqa: E402
 
 OUT = ROOT / "build" / "persist"
 DATA = OUT / "data.img"
-SEEDS = {
-    "/WELCOME.TXT": (
-        b"Welcome to Aster OS.\n\n"
-        b"This home directory lives on the persistent data volume.\n"
-        b"Files here survive a reboot.\n"
-    ),
-    "/SETTINGS.CNF": (
-        b"theme=light\naccent=blue\nanimations=1.00\n"
-        b"wallpaper=0\nreduce_motion=0\nbrightness=1.00\n"
-    ),
-    "/NOTES/IDEAS.TXT": (
-        b"Ideas\n-----\n"
-        b"- Native compositor with real window management\n"
-        b"- Persistent home volume\n"
-        b"- Process isolation and IPC\n"
-    ),
-    "/DOCS/README.TXT": b"Documents saved here persist across reboots.\n",
-}
+SEEDS = dict(SEED_FILES)
 PAYLOAD = "hello-from-first-boot"
 SETTINGS_AFTER = (
     b"theme=light\naccent=green\nanimations=1.00\n"
