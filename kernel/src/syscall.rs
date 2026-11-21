@@ -8,7 +8,7 @@
 //! kernel reads or writes it. Syscalls run with interrupts disabled (interrupt
 //! gate), so blocking calls must yield explicitly.
 
-use aster_abi::{sys, FramebufferInfo, SystemInfo};
+use aster_abi::{sys, FramebufferInfo, NetConfig, NetStatus, SystemInfo};
 
 use crate::arch::idt::InterruptFrame;
 use crate::mm::vmm;
@@ -85,6 +85,19 @@ pub fn handle(frame: &mut InterruptFrame) {
         sys::LOG_READ => log_read(pml4, args[0], args[1] as usize),
         sys::SYNC => sync_storage(),
         sys::SHUTDOWN => shutdown(),
+        sys::NET_STATUS => net_status(pml4, args[0]),
+        sys::NET_CONFIG => net_config(pml4, args[0]),
+        sys::NET_PING => net_ping(pml4, args[0], args[1], args[2]),
+        sys::NET_DNS => net_dns(pml4, args[0], args[1] as usize, args[2], args[3]),
+        sys::SOCKET => socket_open(process, args[0]),
+        sys::BIND => socket_bind(process, args[0], args[1] as u16),
+        sys::CONNECT => socket_connect(pml4, process, args[0], args[1], args[2] as u16, args[3]),
+        sys::SEND => socket_send(pml4, process, args[0], args[1], args[2] as usize),
+        sys::RECV => socket_recv(pml4, process, args[0], args[1], args[2] as usize, args[3]),
+        sys::SOCKET_CLOSE => match crate::net::socket_close(unsafe { (*process).pid }, args[0]) {
+            0 => 0,
+            code => error(code),
+        },
         _ => error(errno::ENOSYS),
     };
     frame.rax = result;
@@ -690,4 +703,200 @@ fn shutdown() -> u64 {
     crate::info!("shutdown requested by user space");
     crate::arch::cpu::halt();
     0
+}
+
+// ---------------------------------------------------------------------------
+// Networking
+// ---------------------------------------------------------------------------
+
+fn read_ipv4(pml4: u64, pointer: u64) -> Result<[u8; 4], i64> {
+    let mut address = [0u8; 4];
+    vmm::copy_from_user(pml4, pointer, &mut address).map_err(|_| aster_abi::errno::EINVAL)?;
+    Ok(address)
+}
+
+fn net_status(pml4: u64, pointer: u64) -> u64 {
+    let status = crate::net::status();
+    let info = NetStatus {
+        rx_packets: status.rx_packets,
+        tx_packets: status.tx_packets,
+        rx_bytes: status.rx_bytes,
+        tx_bytes: status.tx_bytes,
+        rx_errors: status.rx_errors,
+        tx_errors: status.tx_errors,
+        dropped: status.dropped,
+        mac: status.mac,
+        present: status.present as u8,
+        link_up: status.link_up as u8,
+        configured: status.configured as u8,
+        dhcp_state: status.dhcp_state,
+        ip: status.ip,
+        mask: status.mask,
+        gateway: status.gateway,
+        dns: status.dns,
+        mtu: status.mtu as u32,
+        lease_remaining: status.lease_remaining,
+    };
+    let bytes = unsafe {
+        core::slice::from_raw_parts(
+            &info as *const NetStatus as *const u8,
+            core::mem::size_of::<NetStatus>(),
+        )
+    };
+    if vmm::copy_to_user(pml4, pointer, bytes).is_err() {
+        return error(errno::EINVAL);
+    }
+    core::mem::size_of::<NetStatus>() as u64
+}
+
+fn net_config(pml4: u64, pointer: u64) -> u64 {
+    let mut config = NetConfig::dhcp();
+    let bytes = unsafe {
+        core::slice::from_raw_parts_mut(
+            &mut config as *mut NetConfig as *mut u8,
+            core::mem::size_of::<NetConfig>(),
+        )
+    };
+    if vmm::copy_from_user(pml4, pointer, bytes).is_err() {
+        return error(errno::EINVAL);
+    }
+    let result = if config.mode == 0 {
+        crate::net::renew()
+    } else if config.mode == 1 {
+        crate::net::set_static(config.ip, config.mask, config.gateway, config.dns)
+    } else {
+        errno::EINVAL
+    };
+    if result < 0 {
+        error(result)
+    } else {
+        0
+    }
+}
+
+fn net_ping(pml4: u64, destination: u64, timeout_ms: u64, rtt_out: u64) -> u64 {
+    let destination = match read_ipv4(pml4, destination) {
+        Ok(address) => address,
+        Err(code) => return error(code),
+    };
+    let timeout = timeout_ms.clamp(100, 30_000);
+    match crate::net::ping(destination, timeout) {
+        Ok(rtt) => {
+            if vmm::copy_to_user(pml4, rtt_out, &rtt.to_le_bytes()).is_err() {
+                return error(errno::EINVAL);
+            }
+            0
+        }
+        Err(code) => error(code),
+    }
+}
+
+fn net_dns(pml4: u64, name_pointer: u64, name_length: usize, out: u64, timeout_ms: u64) -> u64 {
+    let length = name_length.min(63);
+    if length == 0 {
+        return error(errno::EINVAL);
+    }
+    let mut buffer = alloc::vec![0u8; length];
+    if vmm::copy_from_user(pml4, name_pointer, &mut buffer).is_err() {
+        return error(errno::EINVAL);
+    }
+    let Ok(name) = core::str::from_utf8(&buffer) else {
+        return error(errno::EINVAL);
+    };
+    let timeout = timeout_ms.clamp(100, 30_000);
+    match crate::net::resolve(name, timeout) {
+        Ok(address) => {
+            if vmm::copy_to_user(pml4, out, &address).is_err() {
+                return error(errno::EINVAL);
+            }
+            0
+        }
+        Err(code) => error(code),
+    }
+}
+
+fn socket_open(process: *mut sched::Process, kind: u64) -> u64 {
+    let owner = unsafe { (*process).pid };
+    match crate::net::socket_open(owner, kind as u8) {
+        Ok(id) => id,
+        Err(code) => error(code),
+    }
+}
+
+fn socket_bind(process: *mut sched::Process, id: u64, port: u16) -> u64 {
+    let owner = unsafe { (*process).pid };
+    match crate::net::socket_bind(owner, id, port) {
+        Ok(()) => 0,
+        Err(code) => error(code),
+    }
+}
+
+fn socket_connect(
+    pml4: u64,
+    process: *mut sched::Process,
+    id: u64,
+    address: u64,
+    port: u16,
+    timeout_ms: u64,
+) -> u64 {
+    let remote = match read_ipv4(pml4, address) {
+        Ok(value) => value,
+        Err(code) => return error(code),
+    };
+    let owner = unsafe { (*process).pid };
+    let timeout = timeout_ms.clamp(100, 60_000);
+    match crate::net::socket_connect(owner, id, remote, port, timeout) {
+        Ok(()) => 0,
+        Err(code) => error(code),
+    }
+}
+
+fn socket_send(
+    pml4: u64,
+    process: *mut sched::Process,
+    id: u64,
+    buffer: u64,
+    length: usize,
+) -> u64 {
+    let length = length.min(65536);
+    if length == 0 {
+        return 0;
+    }
+    let mut data = alloc::vec![0u8; length];
+    if vmm::copy_from_user(pml4, buffer, &mut data).is_err() {
+        return error(errno::EINVAL);
+    }
+    let owner = unsafe { (*process).pid };
+    match crate::net::socket_send(owner, id, &data) {
+        Ok(count) => count as u64,
+        Err(code) => error(code),
+    }
+}
+
+fn socket_recv(
+    pml4: u64,
+    process: *mut sched::Process,
+    id: u64,
+    buffer: u64,
+    length: usize,
+    timeout_ms: u64,
+) -> u64 {
+    let length = length.min(65536);
+    if length == 0 {
+        return 0;
+    }
+    let owner = unsafe { (*process).pid };
+    let timeout = timeout_ms.clamp(0, 60_000);
+    match crate::net::socket_recv(owner, id, length, timeout) {
+        Ok(data) => {
+            if data.is_empty() {
+                return 0;
+            }
+            if vmm::copy_to_user(pml4, buffer, &data).is_err() {
+                return error(errno::EINVAL);
+            }
+            data.len() as u64
+        }
+        Err(code) => error(code),
+    }
 }

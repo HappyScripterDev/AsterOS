@@ -1051,5 +1051,7 @@ fn default_size(kind: AppKind) -> (i32, i32) {
         AppKind::Calendar => (660, 500),
 
         AppKind::Photos => (740, 520),
+
+        AppKind::Network => (860, 560),
     }
 }

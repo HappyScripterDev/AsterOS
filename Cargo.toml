@@ -9,6 +9,7 @@ members = [
     "user/faultprobe",
     "user/ipcprobe",
     "user/configd",
+    "user/netprobe",
 ]
 
 [profile.release]

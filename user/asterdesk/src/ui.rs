@@ -41,6 +41,8 @@ pub enum Icon {
 
     Wifi,
 
+    Ethernet,
+
     Bluetooth,
 
     Volume,
@@ -484,6 +486,21 @@ pub fn draw_icon(
             }
 
             surface.fill_circle(cx, rect.bottom() - 3, thin, color);
+        }
+
+        Icon::Ethernet => {
+            // An RJ45 jack with a short cable below it.
+            surface.line(cx - w / 3, cy - h / 4, cx + w / 3, cy - h / 4, color);
+            surface.line(cx - w / 3, cy + h / 10, cx + w / 3, cy + h / 10, color);
+            surface.line(cx - w / 3, cy - h / 4, cx - w / 3, cy + h / 10, color);
+            surface.line(cx + w / 3, cy - h / 4, cx + w / 3, cy + h / 10, color);
+            for index in 0..3 {
+                surface.fill_rect(
+                    Rect::new(cx - w / 6 + index * w / 6, cy - h / 8, 2, h / 4),
+                    color,
+                );
+            }
+            surface.line(cx, cy + h / 10, cx, rect.bottom() - 3, color);
         }
 
         Icon::Bluetooth => {

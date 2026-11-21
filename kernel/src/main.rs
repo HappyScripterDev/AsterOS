@@ -31,6 +31,7 @@ mod ipc;
 mod logging;
 mod mm;
 mod mount;
+mod net;
 mod sched;
 mod storage;
 mod sync;
@@ -38,7 +39,7 @@ mod syscall;
 mod time;
 mod user;
 
-pub const VERSION: &str = "0.3.0 (storage and services)";
+pub const VERSION: &str = "0.4.0 (networking)";
 
 global_asm!(
     r#"
@@ -117,6 +118,8 @@ pub extern "C" fn kernel_main(boot_info_address: u64) -> ! {
     crate::info!("mm: mapping and user address-space tests passed");
 
     storage::init();
+    drivers::e1000::init();
+    net::init();
     fs::init();
     if !fs::self_test() {
         crate::error!("ramfs self-test failed");
@@ -125,6 +128,7 @@ pub extern "C" fn kernel_main(boot_info_address: u64) -> ! {
     crate::info!("ramfs: self-test passed");
 
     sched::init();
+    net::start();
     drivers::ps2::init();
     match user::spawn_module("desk") {
         Ok(pid) => crate::info!("init: desktop started as pid {}", pid),

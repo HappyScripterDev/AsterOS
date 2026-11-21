@@ -71,6 +71,38 @@ fn write16(bus: u8, device: u8, function: u8, offset: u8, value: u16) {
     write32(bus, device, function, offset, current);
 }
 
+/// Locate a device by vendor and device id on bus 0.
+pub fn find_device(vendor_id: u16, device_id: u16) -> Option<Device> {
+    for device in 0..32u8 {
+        for function in 0..8u8 {
+            let vendor = read32(0, device, function, 0) as u16;
+            if vendor == 0xFFFF {
+                if function == 0 {
+                    break;
+                }
+                continue;
+            }
+            let id = (read32(0, device, function, 0) >> 16) as u16;
+            if vendor == vendor_id && id == device_id {
+                let class = (read32(0, device, function, 0x08) >> 24) as u8;
+                let subclass = (read32(0, device, function, 0x08) >> 16) as u8;
+                let prog_if = (read32(0, device, function, 0x08) >> 8) as u8;
+                return Some(Device {
+                    bus: 0,
+                    device,
+                    function,
+                    vendor,
+                    id,
+                    class,
+                    subclass,
+                    prog_if,
+                });
+            }
+        }
+    }
+    None
+}
+
 /// Locate the first AHCI controller on bus 0.
 pub fn find_ahci() -> Option<Device> {
     for device in 0..32u8 {

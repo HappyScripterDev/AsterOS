@@ -125,7 +125,8 @@ LOG OPEN READ WRITE_FD CLOSE SEEK READDIR STAT UNLINK MKDIR SYSTEM_INFO RTC
 PROC_LIST SHUTDOWN`
 
 Reserved but **not implemented** (return `ENOSYS`): `SPAWN`, `WAIT`,
-`CHANNEL_CREATE`, `CHANNEL_SEND`, `CHANNEL_RECV`, `SET_THEME`.
+`CHANNEL_CREATE`, `CHANNEL_SEND`, `CHANNEL_RECV`, `SET_THEME`, plus the
+network and socket calls 37-46.
 
 Every user pointer is translated through the caller's page tables and range
 checked (user top). Reads/writes copy through the direct map in page-sized
@@ -187,8 +188,8 @@ logs, and a permission model beyond the single-user assumption. See
 
 - Single CPU; no APIC/IOAPIC, no SMP, no TSC deadline timer.
 - BIOS/legacy boot is not supported; UEFI only.
-- PCI configuration and AHCI work, but there is no full PCI bus inventory, no
-  ACPI interpreter, and no network/USB/audio/GPU drivers.
+- PCI configuration, AHCI and the e1000 network driver work, but there is no
+  full PCI bus inventory, no ACPI interpreter, and no USB/audio/GPU drivers.
 - No demand paging, swapping, or copy-on-write; user memory is eagerly mapped.
 - No kernel preemption of arbitrary kernel threads.
 - User binaries must be x86_64 ELF with a fixed base; no dynamic linking.

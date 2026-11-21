@@ -47,12 +47,23 @@ kernel writes. Missing mappings return `EINVAL`, never fault the kernel.
 | 34 | RENAME | old path, new path | 0 | Implemented, same directory |
 | 35 | LOG_READ | ptr, cap | bytes | Implemented |
 | 36 | SYNC | - | 0 | Implemented (AHCI flush) |
+| 37 | NET_STATUS | out ptr | `NetStatus` bytes | Implemented (0.4.0) |
+| 38 | NET_CONFIG | `NetConfig` ptr | 0 | Implemented (DHCP/static) |
+| 39 | NET_PING | ip ptr, timeout ms, rtt out | 0 | Implemented (ICMP) |
+| 40 | NET_DNS | name ptr, len, ip out, timeout ms | 0 | Implemented (A records) |
+| 41 | SOCKET | kind (1 UDP, 2 TCP) | socket id | Implemented |
+| 42 | BIND | id, port | 0 | Implemented |
+| 43 | CONNECT | id, ip ptr, port, timeout ms | 0 | Implemented (TCP handshake) |
+| 44 | SEND | id, ptr, len | bytes | Implemented, 64 KiB cap |
+| 45 | RECV | id, ptr, len, timeout ms | bytes / 0 EOF | Implemented, `EAGAIN` on timeout |
+| 46 | SOCKET_CLOSE | id | 0 | Implemented |
 
 ## Error codes
 
 `EPERM`, `ENOENT`, `EBADF`, `ENOMEM`, `EINVAL`, `EIO`, `EEXIST`, `ENOTDIR`,
 `EISDIR`, `ENOSPC`, `ENAMETOOLONG`, `ECHILD`, `ESRCH`, `EPIPE`, `ETIMEDOUT`,
-`ENOSYS`. `ETIMEDOUT` is reserved for future timers.
+`EXDEV`, `EAGAIN`, `EHOSTUNREACH`, `EADDRINUSE`, `ENOTCONN`, `ECONNRESET`,
+`ECONNREFUSED`, `ENOSYS`.
 
 ## Validation rules
 
@@ -68,7 +79,8 @@ kernel writes. Missing mappings return `EINVAL`, never fault the kernel.
 ## Blocking
 
 `SLEEP_MS`, `WAIT` (until a child becomes a zombie), `CHANNEL_SEND` (queue
-full), `CHANNEL_RECV` (queue empty, optionally until a timeout) and `EXIT`
-(never returns) block today. A blocking
+full), `CHANNEL_RECV` (queue empty, optionally until a timeout), `NET_PING`,
+`NET_DNS`, `CONNECT`, `RECV` and `SEND` while resolving ARP all block today.
+A blocking
 syscall must set the thread state and call the scheduler itself; the gate
 already runs with interrupts disabled. IPC will add `block_on`/`wake`.

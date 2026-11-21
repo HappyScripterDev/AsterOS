@@ -22,6 +22,7 @@ APPS = [
     ("cale", "calendar", 1.4),
     ("wal", "wallpapers", 2.4),
     ("set", "settings", 1.8),
+    ("net", "network", 1.8),
 ]
 
 

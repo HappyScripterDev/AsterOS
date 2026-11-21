@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from run import Qmp, find_ovmf, find_qemu, IMAGE  # noqa: E402
+from run import Qmp, find_ovmf, find_qemu, net_args, IMAGE  # noqa: E402
 
 OUT = ROOT / "build" / "storage"
 DATA = ROOT / "build" / "data.img"
@@ -53,6 +53,7 @@ def boot(label: str, data_disk: Path | None, port: int, wait: float = 9.0):
         "-device", "VGA", "-rtc", "base=localtime", "-no-reboot",
         "-serial", f"file:{serial}", "-monitor", "none",
         "-drive", f"file={IMAGE},format=raw,if=ide,index=0",
+        *net_args(),
     ]
     if data_disk is not None:
         cmd += ["-drive", f"file={data_disk},format=raw,if=ide,index=1"]

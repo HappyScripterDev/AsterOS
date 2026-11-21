@@ -788,6 +788,7 @@ pub fn exit_current(code: i64) -> ! {
                     crate::ipc::release_endpoint(endpoint);
                 }
             }
+            crate::net::close_owner((*process).pid);
             (*process).exit_code = code;
             (*process).threads_alive = (*process).threads_alive.saturating_sub(1);
             if (*process).threads_alive == 0 {

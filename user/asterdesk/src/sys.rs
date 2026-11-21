@@ -520,3 +520,82 @@ pub fn shutdown() -> ! {
         core::hint::spin_loop();
     }
 }
+
+pub fn net_status() -> Option<aster_abi::NetStatus> {
+    let mut status = aster_abi::NetStatus::empty();
+    let result = unsafe {
+        syscall6(
+            sys::NET_STATUS,
+            &mut status as *mut aster_abi::NetStatus as u64,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    if result < 0 {
+        None
+    } else {
+        Some(status)
+    }
+}
+
+pub fn net_config(config: &mut aster_abi::NetConfig) -> i64 {
+    unsafe {
+        syscall6(
+            sys::NET_CONFIG,
+            config as *mut aster_abi::NetConfig as u64,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+    }
+}
+
+pub fn net_renew_dhcp() -> i64 {
+    let mut config = aster_abi::NetConfig::dhcp();
+    net_config(&mut config)
+}
+
+pub fn net_ping(address: [u8; 4], timeout_ms: u64) -> Result<u32, i64> {
+    let mut rtt = 0u32;
+    let result = unsafe {
+        syscall6(
+            sys::NET_PING,
+            address.as_ptr() as u64,
+            timeout_ms,
+            &mut rtt as *mut u32 as u64,
+            0,
+            0,
+            0,
+        )
+    };
+    if result < 0 {
+        Err(result)
+    } else {
+        Ok(rtt)
+    }
+}
+
+pub fn net_dns(name: &str, timeout_ms: u64) -> Result<[u8; 4], i64> {
+    let mut address = [0u8; 4];
+    let result = unsafe {
+        syscall6(
+            sys::NET_DNS,
+            name.as_ptr() as u64,
+            name.len() as u64,
+            address.as_mut_ptr() as u64,
+            timeout_ms,
+            0,
+            0,
+        )
+    };
+    if result < 0 {
+        Err(result)
+    } else {
+        Ok(address)
+    }
+}

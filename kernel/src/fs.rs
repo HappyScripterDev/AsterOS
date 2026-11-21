@@ -243,7 +243,7 @@ pub fn init() {
         ),
         (
             "/system/version",
-            "Aster OS 0.3.0 (storage and services)\nkernel: aster 0.3.0\nabi: 1\n",
+            "Aster OS 0.4.0 (networking)\nkernel: aster 0.4.0\nabi: 1\n",
         ),
         (
             "/var/log/boot.log",

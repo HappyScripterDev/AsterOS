@@ -199,8 +199,10 @@ Implemented calls and semantics are listed in
 - `RENAME`, `SYNC` and `LOG_READ` support Files, durable settings and Monitor.
 - `SHUTDOWN` uses the QEMU ACPI poweroff ports; there is no ACPI driver yet.
 
-`SPAWN`, `WAIT`, IPC channel calls, and `SET_THEME` are reserved in the ABI but
-return `ENOSYS`. The full table is in `docs/architecture/SYSCALLS.md`. They are not advertised as working in the desktop.
+`SPAWN`, `WAIT` and the IPC channel calls are implemented. `SET_THEME`
+intentionally returns `ENOSYS` because the appearance is fixed to light. The
+0.4.0 network calls (37-46) are implemented and listed in
+`docs/architecture/SYSCALLS.md`.
 
 ## 10. Exceptions and diagnostics
 

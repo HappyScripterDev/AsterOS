@@ -156,6 +156,79 @@ pub struct MemoryDescriptor {
     pub attribute: u64,
 }
 
+/// Live network status reported by `NET_STATUS`.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct NetStatus {
+    pub rx_packets: u64,
+    pub tx_packets: u64,
+    pub rx_bytes: u64,
+    pub tx_bytes: u64,
+    pub rx_errors: u64,
+    pub tx_errors: u64,
+    pub dropped: u64,
+    pub mac: [u8; 6],
+    pub present: u8,
+    pub link_up: u8,
+    pub configured: u8,
+    pub dhcp_state: u8,
+    pub ip: [u8; 4],
+    pub mask: [u8; 4],
+    pub gateway: [u8; 4],
+    pub dns: [u8; 4],
+    pub mtu: u32,
+    pub lease_remaining: u32,
+}
+
+impl NetStatus {
+    pub const fn empty() -> Self {
+        Self {
+            rx_packets: 0,
+            tx_packets: 0,
+            rx_bytes: 0,
+            tx_bytes: 0,
+            rx_errors: 0,
+            tx_errors: 0,
+            dropped: 0,
+            mac: [0; 6],
+            present: 0,
+            link_up: 0,
+            configured: 0,
+            dhcp_state: 0,
+            ip: [0; 4],
+            mask: [0; 4],
+            gateway: [0; 4],
+            dns: [0; 4],
+            mtu: 0,
+            lease_remaining: 0,
+        }
+    }
+}
+
+/// Static network configuration passed to `NET_CONFIG`.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct NetConfig {
+    /// 0 = DHCP (fields ignored), 1 = static IPv4.
+    pub mode: u32,
+    pub ip: [u8; 4],
+    pub mask: [u8; 4],
+    pub gateway: [u8; 4],
+    pub dns: [u8; 4],
+}
+
+impl NetConfig {
+    pub const fn dhcp() -> Self {
+        Self {
+            mode: 0,
+            ip: [0; 4],
+            mask: [0; 4],
+            gateway: [0; 4],
+            dns: [0; 4],
+        }
+    }
+}
+
 /// System call numbers. The ABI is versioned as a whole; individual calls may
 /// be added but never renumbered.
 pub mod sys {
@@ -197,6 +270,16 @@ pub mod sys {
     pub const RENAME: u64 = 34;
     pub const LOG_READ: u64 = 35;
     pub const SYNC: u64 = 36;
+    pub const NET_STATUS: u64 = 37;
+    pub const NET_CONFIG: u64 = 38;
+    pub const NET_PING: u64 = 39;
+    pub const NET_DNS: u64 = 40;
+    pub const SOCKET: u64 = 41;
+    pub const BIND: u64 = 42;
+    pub const CONNECT: u64 = 43;
+    pub const SEND: u64 = 44;
+    pub const RECV: u64 = 45;
+    pub const SOCKET_CLOSE: u64 = 46;
 }
 
 /// Error codes returned in `rax` by system calls. Negative values are errors.
@@ -218,6 +301,12 @@ pub mod errno {
     pub const EPIPE: i64 = -14;
     pub const ETIMEDOUT: i64 = -15;
     pub const EXDEV: i64 = -16;
+    pub const EAGAIN: i64 = -17;
+    pub const EHOSTUNREACH: i64 = -18;
+    pub const EADDRINUSE: i64 = -19;
+    pub const ENOTCONN: i64 = -20;
+    pub const ECONNRESET: i64 = -21;
+    pub const ECONNREFUSED: i64 = -22;
     pub const ENOSYS: i64 = -38;
 }
 

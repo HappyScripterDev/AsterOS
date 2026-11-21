@@ -1,6 +1,6 @@
 # Security Threat Model
 
-Date: 2026-11-20. Scope: the developer-preview system in this repository. This
+Date: 2026-11-21 (0.4.0 network update). Scope: the developer-preview system in this repository. This
 document states what is protected, what is not, and how each claim is verified.
 It is deliberately conservative: an unverified mitigation is not a feature.
 
@@ -28,7 +28,10 @@ In scope:
 
 Out of scope for this milestone:
 
-- Remote network attackers (no network stack exists).
+- Remote network attackers as a confidentiality boundary. The IPv4 client
+  stack now parses untrusted frames, but there is no firewall, no inbound TCP
+  listener and no privilege check on network configuration. Parser integrity
+  is in scope; resisting a hostile local network is not yet a claim.
 - DMA attacks (no IOMMU, no external device drivers).
 - Microarchitectural side channels (Spectre/Meltdown class).
 - Firmware/CPU compromise below UEFI.
@@ -44,7 +47,7 @@ Out of scope for this milestone:
 +------------------------------|---------------------------------+
                                | int 0x80 (validated pointers)
 +------------------------------v---------------------------------+
-|  Kernel: PMM/VMM/heap, scheduler, ramfs, PS/2, time            |
+|  Kernel: PMM/VMM/heap, scheduler, ramfs, PS/2, time, net       |
 |   - ring 0, full physical memory via direct map                |
 +------------------------------|---------------------------------+
                                | BootInfo (validated magic/version)

@@ -32,6 +32,10 @@ STORAGE_MARKERS = [
     "storage: FAT32",
     "storage: FAT32 read self-test passed",
 ]
+NETWORK_MARKERS = [
+    "e1000: 52:54:00:12:34:56",
+    "dhcp: bound 10.0.2.15",
+]
 FORBIDDEN = ["KERNEL PANIC", "user fault", "PANIC:", "system halted"]
 
 
@@ -85,6 +89,7 @@ def boot_smoke() -> None:
     missing = [marker for marker in MARKERS if marker not in text]
     if DATA_IMAGE.exists():
         missing += [marker for marker in STORAGE_MARKERS if marker not in text]
+    missing += [marker for marker in NETWORK_MARKERS if marker not in text]
     faults = [token for token in FORBIDDEN if token in text]
     if missing:
         print(f"FAIL: missing boot markers: {missing}")

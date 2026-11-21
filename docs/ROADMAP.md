@@ -106,15 +106,26 @@ Remaining:
 | Installer | AFS + partitioning | Install to a QEMU disk and boot from it |
 | Update | signed metadata | Verify, stage, apply, roll back |
 
-## Phase 7 - Networking and security (NOT STARTED)
+## Phase 7 - Networking and security
+
+### IPv4 networking (COMPLETE for 0.4.0)
+
+| Item | Acceptance | State |
+|---|---|---|
+| Ethernet + ARP + IPv4 | Ping a QEMU host on a user-mode network | DONE |
+| DHCP/DNS | Obtain an address and resolve a name | DONE |
+| TCP/UDP + socket API | Loopback and host echo tests | DONE |
+| Network UI | Live status in menu bar, Settings, Monitor and a diagnostics app | DONE |
+| IPv6 dual stack | SLAAC, ND, ICMPv6, AAAA, TCP over IPv6 | NOT STARTED |
+| TLS 1.3 | CSPRNG, reviewed primitives, certificate validation | NOT STARTED |
+
+### Users and security (NOT STARTED)
 
 | Item | Acceptance |
 |---|---|
-| Ethernet + ARP + IPv4 | Ping a QEMU host on a user-mode network |
-| DHCP/DNS | Obtain an address and resolve a name |
-| TCP/UDP + socket API | Loopback and host echo tests |
 | Users and login | Two accounts, passwords hashed with a reviewed library, sessions |
 | Permissions/capabilities | File access denied across users; tests prove it |
+| Network privileges | Unprivileged processes cannot reconfigure the NIC or open raw sockets |
 | Sandboxing | App runs with a restricted capability set; escape tests fail |
 | Package signatures | Tampered package rejected |
 | Secure update | Rollback and signature failures are safe |

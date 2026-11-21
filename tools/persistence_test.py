@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from image import build_data_image, verify_image  # noqa: E402
-from run import Qmp, find_ovmf, find_qemu, IMAGE  # noqa: E402
+from run import Qmp, find_ovmf, find_qemu, net_args, IMAGE  # noqa: E402
 from seeds import SEED_FILES  # noqa: E402
 
 OUT = ROOT / "build" / "persist"
@@ -60,6 +60,7 @@ def run_boot(script, label: str) -> None:
         "-device", "VGA", "-rtc", "base=localtime", "-no-reboot",
         "-serial", f"file:{OUT / (label + '.log')}", "-monitor", "none",
         "-drive", f"file={IMAGE},format=raw,if=ide,index=0",
+        *net_args(),
         "-drive", f"file={DATA},format=raw,if=ide,index=1",
         "-display", "none", "-vnc", f"127.0.0.1:{14 + len(label)}",
         "-qmp", f"tcp:127.0.0.1:{port},server=on,wait=off",

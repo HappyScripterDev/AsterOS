@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.4.0 - Networking (2026-11-21)
+
+- Added a real Intel 82540EM (e1000) driver: PCI discovery, MMIO BAR, EEPROM
+  MAC, link state, 256-entry RX ring, 32-entry TX ring, synchronous TX and
+  RX/TX/error counters. NIC interrupts are masked because the kernel still uses
+  the PIC only; a kernel thread polls at 100 Hz.
+- Added Ethernet II, ARP, IPv4, ICMP, UDP, DHCP client, DNS client and a TCP
+  client with handshake, sliding send window, partial in-order receive,
+  retransmission, FIN and RST.
+- Added socket syscalls 37-46 (`NET_STATUS`, `NET_CONFIG`, `NET_PING`,
+  `NET_DNS`, `SOCKET`, `BIND`, `CONNECT`, `SEND`, `RECV`, `SOCKET_CLOSE`),
+  new errno values and `NetStatus`/`NetConfig` ABI structures.
+- Added a 100 Hz kernel network thread and a per-process socket table with
+  owner cleanup on process exit.
+- Added live network status to the menu bar, Control Centre, Settings and
+  Monitor; added the Network diagnostics app (ping, DNS, DHCP renew) and
+  Terminal commands `net`, `ping` and `dns`.
+- Added `tools/net_test.py`, which boots with an explicit e1000 and host-side
+  TCP/UDP/DNS servers and verifies DHCP, ICMP, TCP echo, a 64 KiB TCP bulk
+  echo, UDP echo and DNS. Added `tools/network_ui_probe.py` for the desktop
+  integration.
+- Boot smoke now requires e1000 detection and a DHCP lease. The bootloader
+  loads `NETPROBE.ELF`.
+- Documented architecture, measurements, limitations, and the IPv6/TLS design
+  in `docs/releases/0.4.0/`.
+
 ## 0.3.0 - Storage and services (2026-11-20)
 
 - Added a block-device registry with capacity checks, flush (AHCI FLUSH CACHE

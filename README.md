@@ -6,11 +6,11 @@ Aster OS is an independent, from-scratch desktop operating system for x86_64.
 It is **not** a Linux distribution, **not** a modified Windows or macOS, and
 **not** a desktop mockup. It has its own UEFI bootloader, higher-half kernel,
 memory manager, scheduler, system-call ABI, filesystem, input stack, and a
-ring-3 desktop environment with a light, macOS-inspired software compositor, isolated child processes, a block/mount storage stack, a persistent FAT32 home volume and a user-space settings service.
+ring-3 desktop environment with a light, macOS-inspired software compositor, isolated child processes, a block/mount storage stack, a persistent FAT32 home volume, a user-space settings service and a real wired IPv4 network stack.
 
 ![Aster Desktop](docs/screenshots/desktop.png)
 
-## Status: 0.3.0 storage and services
+## Status: 0.4.0 networking
 
 This repository contains a working, bootable system on QEMU (UEFI + GPT/FAT32
 disk image). The current milestone is a **single-CPU developer preview**:
@@ -20,25 +20,28 @@ disk image). The current milestone is a **single-CPU developer preview**:
 | Boot | Aster Boot (own UEFI loader), GPT + FAT32 ESP, ELF kernel loading, custom page tables, `ExitBootServices`, higher-half handoff |
 | Kernel | GDT/TSS, IDT, 256 vectors, exceptions, PIC/PIT at 1 kHz, 4-level paging, bitmap frame allocator, kernel heap (`alloc`), preemptive scheduler, ring-3 processes, syscalls via `int 0x80` |
 | Memory | 4 KiB frames, 32 GiB addressable bitmap, per-process PML4, NX/W^X user mappings, heap self-tests, user copy validation |
-| Drivers | COM1 serial, UEFI GOP framebuffer, PS/2 keyboard + mouse (IRQ driven), PIT, PCI config, AHCI (q35) |
+| Drivers | COM1 serial, UEFI GOP framebuffer, PS/2 keyboard + mouse (IRQ driven), PIT, PCI config, AHCI (q35), Intel 82540EM (e1000) |
 | Filesystem | VFS + mount table; ramfs root for system files, FAT32 at `/home/user` with create/read/write/mkdir/rename/unlink |
 | Desktop | Aster Desktop in ring 3: light menu bar, Spotlight launcher, dock with generated app icons and magnification, macOS-style window manager (traffic lights, drag, resize, maximize, snap, animations), Control Centre, notifications, virtual desktops |
 | Storage | Block registry with capacity/bounds/flush/counters, mount table, GPT + FAT32 at `/home/user`; v1 settings with backup; Settings reports device, filesystem, capacity, used/free and I/O |
+| Network | e1000 Ethernet, ARP, IPv4, ICMP, UDP, DHCP client, DNS client, TCP client, blocking sockets; live menu bar, Network app, Settings and Monitor integration |
 | Processes | Private PML4 per process; `SPAWN`/`WAIT`; zombie reaping; every ring-3 exception contained; isolation probe with exit status 42 and a deliberate fault returning -11 |
 | Services | `configd` (ring 3) owns validated settings over IPC; desktop supervisor restarts it; direct-I/O fallback; timed IPC receive |
 | Files | Real create, rename, delete, copy, move, info, sort, search, forward/back and breadcrumbs on the mounted filesystem |
 | Monitor | CPU/memory/process cards, storage usage, real I/O counters and a kernel-log view |
 | IPC | Kernel channels with per-process handles, 256-byte messages, blocking send/receive, close/hangup; ping-pong verified between isolated processes |
-| Apps | Terminal (real shell + ramfs), Files, Settings, Calculator, Monitor, Text, Notes, Calendar, Wallpapers |
+| Apps | Terminal (real shell + ramfs), Files, Settings, Calculator, Monitor, Text, Notes, Calendar, Wallpapers, Network |
 | Tests | Image verifier, block/mount/FAT self-tests, boot smoke, UI/pointer/files probes, persistence, isolation, settings and service tests |
 
 Everything in the table is exercised by booting the system and driving it, not
 by static screenshots. Known gaps are listed in
 [docs/FEATURES.md](docs/FEATURES.md) and [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
-There is no networking, audio, USB, AFS/journaling, SMP/APIC, GPU acceleration,
-full application sandboxing, package manager, installer, updater, or browser
-yet. The FAT32 home uses 8.3 names and has no journal. Store/Installer/Update/Browser are deliberately **not** present
-in the UI.
+Networking is IPv4-only and polls the e1000 because there is no APIC/PCI IRQ
+routing; there is no IPv6, TLS, inbound TCP listener or persistent static
+configuration yet. There is no audio, USB, AFS/journaling, SMP, GPU
+acceleration, full application sandboxing, package manager, installer, updater
+or browser. The FAT32 home uses 8.3 names and has no journal.
+Store/Installer/Update/Browser are deliberately **not** present in the UI.
 
 ## Quick start
 
@@ -57,6 +60,7 @@ Headless smoke test:
 ```bash
 python tools/run.py --headless --timeout 12 --screenshot build/screen.ppm
 python tools/test.py                  # build + host image tests + boot assertions
+python tools/net_test.py              # real DHCP, ICMP, TCP, UDP and DNS test
 ```
 
 Full instructions, supported hosts, and troubleshooting:
@@ -69,7 +73,7 @@ kernel only exposes a framebuffer mapping, input events, time, memory, and
 filesystem syscalls; it contains no UI code.
 
 - Menu bar: Aster brand tile, application name, working File/Edit/View/Window/Help
-  menus, Spotlight, Control Centre, Wi-Fi status, clock and notification centre.
+  menus, Spotlight, Control Centre, live Ethernet status, clock and notification centre.
 - Dock: generated squircle app icons, magnification, running indicators,
   tooltips, click to launch or focus.
 - Spotlight: `Ctrl+Space`, centred translucent search panel, keyboard
@@ -78,8 +82,9 @@ filesystem syscalls; it contains no UI code.
   resize, minimize to the dock, maximize, snap to halves, rounded corners,
   cached soft shadows and light title bars.
 - Control Centre: light-only appearance, real display brightness, reduce
-  motion, accent colour, and honest "No adapter" rows for Wi-Fi, Bluetooth and
-  audio. There is no dark mode in this build.
+  motion, accent colour, a live Ethernet tile (address or link state) and an
+  honest "No adapter" row for Bluetooth and audio. There is no dark mode in
+  this build.
 - Shortcuts: `Ctrl+Space` Spotlight, `Ctrl+W` close, `Ctrl+M` minimize,
   `Ctrl+Tab` cycle, `Ctrl+Left/Right` virtual desktops.
 
@@ -100,16 +105,31 @@ uses 8.3 names and has no journal yet, and Settings states both limits.
 Settings are versioned (`version=1`), validated per key and written through a
 temporary file with a backup. `configd` owns them in the normal path; the
 desktop supervisor restarts it on failure and falls back to direct I/O so the
-session is never locked out. See [0.3.0 release docs](docs/releases/0.3.0/).
+session is never locked out. See [0.4.0 release docs](docs/releases/0.4.0/).
+
+### Networking
+
+![Network diagnostics](docs/screenshots/network.png)
+
+The kernel drives an Intel 82540EM (e1000) with real MMIO, DMA rings and a
+simultaneous receive/transmit path. Ethernet II, ARP, IPv4, ICMP, UDP, a DHCP
+client, a DNS client and a TCP client run in a kernel network thread; user
+processes use blocking socket syscalls. The Network app, Settings, Monitor and
+the menu bar all show live state. `tools/net_test.py` boots the system with
+QEMU user-mode networking and verifies DHCP, ping, TCP echo (including a 64 KiB
+bulk transfer), UDP echo and DNS against host-side servers. The driver is
+polled because this milestone has no APIC/PCI IRQ routing; IPv6 and TLS are
+architecture-only work in this release.
 
 The desktop is light-only by product decision and follows macOS interaction
 patterns without copying Apple code or artwork: a translucent menu bar, a
 Spotlight-style launcher, traffic-light window controls, a bottom dock and
 soft, layered surfaces. The supplied Aster logo (`assets/Logo/Logo.png`) is
-used in the menu bar, notifications and the About page. The nine app icons are
-original artwork generated by `tools/icongen.py`; the four wallpapers are
-procedural (Sonoma, Sequoia, Ventura, Monterey). All icons and wallpapers are
-drawn or generated by this project.
+used in the menu bar, notifications and the About page. The app icons are
+original artwork: nine generated by `tools/icongen.py` and the Network icon
+drawn in `ui.rs`; the four wallpapers are procedural (Sonoma, Sequoia,
+Ventura, Monterey). All icons and wallpapers are drawn or generated by this
+project.
 
 Design tokens and interaction rules: [docs/design/](docs/design/).
 

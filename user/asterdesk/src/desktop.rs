@@ -207,6 +207,10 @@ pub struct Desktop {
 
     last_clock: u64,
 
+    net: Option<aster_abi::NetStatus>,
+
+    last_net: u64,
+
     started: u64,
 
     frames: u64,
@@ -278,6 +282,10 @@ impl Desktop {
             clock_text: String::new(),
 
             last_clock: 0,
+
+            net: None,
+
+            last_net: 0,
 
             started: sys::time_ms(),
 
@@ -557,6 +565,11 @@ impl Desktop {
         }
 
         self.last_clock = now;
+
+        if now.saturating_sub(self.last_net) >= 1000 || self.net.is_none() {
+            self.net = sys::net_status();
+            self.last_net = now;
+        }
 
         if let Some(time) = sys::rtc() {
             let weekday = match time.weekday {
@@ -1044,10 +1057,7 @@ impl Desktop {
 
             self.control_center = false;
         } else if (x - wifi_x).abs() < 14 {
-            self.notify(
-                "Wi-Fi",
-                "No wireless adapter driver is implemented in this build.",
-            );
+            self.launch(AppKind::Network);
         }
     }
 
@@ -1479,10 +1489,7 @@ impl Desktop {
 
         if ly >= 46 && ly <= 118 {
             if lx >= 14 && lx <= 152 {
-                self.notify(
-                    "Wi-Fi",
-                    "No wireless adapter driver is implemented in this build.",
-                );
+                self.launch(AppKind::Network);
             } else if lx >= 160 && lx <= 304 {
                 self.notify(
                     "Bluetooth",
@@ -1645,17 +1652,29 @@ impl Desktop {
             ui::draw_icon(&mut self.surface, icon, rect, palette.text, 1, &self.theme);
         }
 
+        let (net_color, net_tooltip) = match self.net {
+            Some(status) if status.present == 0 => {
+                (palette.tertiary, "No wired adapter".to_string())
+            }
+            Some(status) if status.configured != 0 => (
+                theme::SUCCESS,
+                format!("Ethernet {}", network_ip_text(status.ip)),
+            ),
+            Some(status) if status.link_up != 0 => {
+                (theme::WARNING, "Ethernet link up, no address".to_string())
+            }
+            Some(_) => (palette.tertiary, "Ethernet link down".to_string()),
+            None => (palette.tertiary, "No wired adapter".to_string()),
+        };
+
         ui::draw_icon(
             &mut self.surface,
-            Icon::Wifi,
+            Icon::Ethernet,
             Rect::new(wifi_x - 8, 5, 16, 16),
-            palette.tertiary,
+            net_color,
             1,
             &self.theme,
         );
-
-        self.surface
-            .line(wifi_x - 7, 19, wifi_x + 6, 5, palette.tertiary);
 
         self.surface
             .draw_text(clock_x, 6, &self.clock_text, BODY, palette.text);
@@ -1666,17 +1685,17 @@ impl Desktop {
 
         if self.mouse_y < TOP_BAR_HEIGHT {
             let tooltip = if (self.mouse_x - wifi_x).abs() < 14 {
-                Some(("No network adapter", wifi_x))
+                Some((net_tooltip.clone(), wifi_x))
             } else if (self.mouse_x - search_x).abs() < 14 {
-                Some(("Spotlight", search_x))
+                Some(("Spotlight".to_string(), search_x))
             } else if (self.mouse_x - control_x).abs() < 14 {
-                Some(("Control Centre", control_x))
+                Some(("Control Centre".to_string(), control_x))
             } else {
                 None
             };
 
             if let Some((text, x)) = tooltip {
-                let width = self.surface.text_width(text, CAPTION) + 16;
+                let width = self.surface.text_width(&text, CAPTION) + 16;
 
                 let rect = Rect::new(
                     (x - width / 2).clamp(6, self.width - width - 6),
@@ -1692,7 +1711,7 @@ impl Desktop {
                     .stroke_rounded(rect, 6, 1, Color::rgba(0, 0, 0, 30));
 
                 self.surface
-                    .draw_text(rect.x + 8, rect.y + 4, text, CAPTION, palette.text);
+                    .draw_text(rect.x + 8, rect.y + 4, &text, CAPTION, palette.text);
             }
         }
     }
@@ -1965,11 +1984,20 @@ impl Desktop {
             palette.text,
         );
 
-        // Connectivity tiles (honest: no adapters).
+        // Connectivity tiles reflect the real driver state.
+
+        let ethernet_detail = match self.net {
+            Some(status) if status.configured != 0 => network_ip_text(status.ip),
+            Some(status) if status.present != 0 && status.link_up != 0 => {
+                "Link up, no address".to_string()
+            }
+            Some(status) if status.present != 0 => "Link down".to_string(),
+            _ => "No adapter".to_string(),
+        };
 
         for (index, (icon, title, detail)) in [
-            (Icon::Wifi, "Wi-Fi", "No adapter"),
-            (Icon::Bluetooth, "Bluetooth", "No adapter"),
+            (Icon::Ethernet, "Ethernet", ethernet_detail),
+            (Icon::Bluetooth, "Bluetooth", "No adapter".to_string()),
         ]
         .iter()
         .enumerate()
@@ -2381,6 +2409,13 @@ fn wrap(text: &str, max_chars: usize) -> Vec<String> {
     }
 
     lines
+}
+
+fn network_ip_text(address: [u8; 4]) -> String {
+    format!(
+        "{}.{}.{}.{}",
+        address[0], address[1], address[2], address[3]
+    )
 }
 
 fn month_short(month: u8) -> &'static str {

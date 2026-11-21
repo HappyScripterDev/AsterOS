@@ -150,7 +150,8 @@ desktop's own frame-time log. Results are recorded in
 | IPC handle/hangup errors | Implemented | Yes | Forged handle `-3`; peer exit wakes receiver with `-14` |
 | Persistent home | Implemented | Yes | write/reboot/read plus host FAT verification |
 | Missing/corrupt data disk | Implemented | Yes | desktop boots; mount rejected; no fault |
-| Networking/audio | Not applicable | - | not implemented |
+| Networking | Implemented (IPv4) | Yes | `net_test.py`: DHCP, ICMP, TCP echo + 64 KiB bulk, UDP echo, DNS |
+| Audio | Not applicable | - | not implemented |
 | SMP/APIC | Not applicable | - | not implemented |
 | Security isolation | Partial | - | ring-3 faults are handled; no exploit tests |
 

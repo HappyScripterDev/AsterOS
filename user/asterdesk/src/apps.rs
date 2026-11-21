@@ -54,10 +54,12 @@ pub enum AppKind {
     Calendar,
 
     Photos,
+
+    Network,
 }
 
 impl AppKind {
-    pub const ALL: [AppKind; 9] = [
+    pub const ALL: [AppKind; 10] = [
         AppKind::Terminal,
         AppKind::Files,
         AppKind::Settings,
@@ -67,6 +69,7 @@ impl AppKind {
         AppKind::Notes,
         AppKind::Calendar,
         AppKind::Photos,
+        AppKind::Network,
     ];
 
     pub fn title(&self) -> &'static str {
@@ -88,6 +91,8 @@ impl AppKind {
             AppKind::Calendar => "Calendar",
 
             AppKind::Photos => "Wallpapers",
+
+            AppKind::Network => "Network",
         }
     }
 
@@ -110,6 +115,8 @@ impl AppKind {
             AppKind::Calendar => Icon::Calendar,
 
             AppKind::Photos => Icon::Photos,
+
+            AppKind::Network => Icon::Ethernet,
         }
     }
 }
@@ -158,6 +165,8 @@ pub enum App {
     Calendar(CalendarApp),
 
     Photos(PhotosApp),
+
+    Network(NetworkApp),
 }
 
 impl App {
@@ -180,6 +189,8 @@ impl App {
             AppKind::Calendar => App::Calendar(CalendarApp::new()),
 
             AppKind::Photos => App::Photos(PhotosApp::new(theme)),
+
+            AppKind::Network => App::Network(NetworkApp::new()),
         }
     }
 
@@ -202,6 +213,8 @@ impl App {
             App::Calendar(_) => AppKind::Calendar,
 
             App::Photos(_) => AppKind::Photos,
+
+            App::Network(_) => AppKind::Network,
         }
     }
 
@@ -224,6 +237,8 @@ impl App {
             App::Calendar(app) => format!("{} {}", month_name(app.month), app.year),
 
             App::Photos(_) => "Wallpapers".to_string(),
+
+            App::Network(_) => "Network".to_string(),
         }
     }
 
@@ -264,6 +279,8 @@ impl App {
             App::Calendar(app) => app.draw(surface, content, theme),
 
             App::Photos(app) => app.draw(surface, content, theme),
+
+            App::Network(app) => app.draw(surface, content, theme),
         }
     }
 
@@ -286,6 +303,8 @@ impl App {
             App::Calendar(app) => app.key(event),
 
             App::Photos(app) => app.key(event),
+
+            App::Network(app) => app.key(event),
         }
     }
 
@@ -308,6 +327,8 @@ impl App {
             App::Calendar(app) => app.mouse(x, y, content, theme),
 
             App::Photos(app) => app.mouse(x, y, content, theme),
+
+            App::Network(app) => app.mouse(x, y, content),
         }
     }
 }
@@ -372,7 +393,7 @@ impl TerminalApp {
     fn new() -> Self {
         let mut lines = Vec::new();
 
-        lines.push("Aster Terminal 0.3.0".to_string());
+        lines.push("Aster Terminal 0.4.0".to_string());
 
         lines.push("Type `help` for the command list.".to_string());
 
@@ -533,7 +554,7 @@ impl TerminalApp {
 
             "uname" => self
                 .lines
-                .push("Aster OS 0.3.0 x86_64 (aster kernel)".to_string()),
+                .push("Aster OS 0.4.0 x86_64 (aster kernel)".to_string()),
 
             "date" => match sys::rtc() {
                 Some(t) => self.lines.push(format!(
@@ -568,6 +589,79 @@ impl TerminalApp {
                         "  {:>3}  {:>3}  {}",
                         process.pid, process.threads, name
                     ));
+                }
+            }
+
+            "net" => {
+                if let Some(status) = sys::net_status() {
+                    self.lines.push(format!(
+                        "eth0: {}  link {}  mac {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+                        if status.configured != 0 {
+                            ip_string(status.ip)
+                        } else {
+                            "unconfigured".to_string()
+                        },
+                        if status.link_up != 0 { "up" } else { "down" },
+                        status.mac[0],
+                        status.mac[1],
+                        status.mac[2],
+                        status.mac[3],
+                        status.mac[4],
+                        status.mac[5]
+                    ));
+                    if status.configured != 0 {
+                        self.lines.push(format!(
+                            "gateway {}  dns {}  mtu {}  lease {} s",
+                            ip_string(status.gateway),
+                            ip_string(status.dns),
+                            status.mtu,
+                            status.lease_remaining
+                        ));
+                    }
+                    self.lines.push(format!(
+                        "rx {} packets / tx {} packets, {} errors, {} dropped",
+                        status.rx_packets,
+                        status.tx_packets,
+                        status.rx_errors + status.tx_errors,
+                        status.dropped
+                    ));
+                } else {
+                    self.lines.push("net: status unavailable".to_string());
+                }
+            }
+
+            "ping" => {
+                if let Some(address) = args.first().and_then(|value| parse_ipv4(value)) {
+                    match sys::net_ping(address, 2500) {
+                        Ok(rtt) => self.lines.push(format!(
+                            "ping {}: reply in {} ms",
+                            ip_string(address),
+                            rtt
+                        )),
+                        Err(code) => self.lines.push(format!(
+                            "ping {}: failed (errno {})",
+                            ip_string(address),
+                            -code
+                        )),
+                    }
+                } else {
+                    self.lines.push("usage: ping <ipv4 address>".to_string());
+                }
+            }
+
+            "dns" => {
+                if let Some(name) = args.first() {
+                    match sys::net_dns(name, 3000) {
+                        Ok(address) => {
+                            self.lines
+                                .push(format!("dns {}: {}", name, ip_string(address)))
+                        }
+                        Err(code) => self
+                            .lines
+                            .push(format!("dns {}: failed (errno {})", name, -code)),
+                    }
+                } else {
+                    self.lines.push("usage: dns <name>".to_string());
                 }
             }
 
@@ -2254,6 +2348,12 @@ pub struct SettingsApp {
     storage_rows: Vec<(String, String)>,
 
     storage_updated: u64,
+
+    net: Option<aster_abi::NetStatus>,
+
+    net_updated: u64,
+
+    renew_button: Rect,
 }
 
 const SECTIONS: [(&str, Icon); 10] = [
@@ -2279,7 +2379,18 @@ impl SettingsApp {
             storage_rows: Vec::new(),
 
             storage_updated: 0,
+
+            net: None,
+
+            net_updated: 0,
+
+            renew_button: Rect::new(0, 0, 0, 0),
         }
+    }
+
+    fn refresh_network(&mut self) {
+        self.net = sys::net_status();
+        self.net_updated = sys::time_ms();
     }
 
     fn refresh_storage(&mut self) {
@@ -2549,9 +2660,37 @@ impl SettingsApp {
 
                 "The kernel does not initialise an HDA or AC'97 controller yet. Volume controls are intentionally absent instead of being decorative."),
 
-            3 => self.notice_block(surface, x, cy, width, theme, "No network stack",
+            3 => {
+                if self.net.is_none()
+                    || sys::time_ms().saturating_sub(self.net_updated) > 900
+                {
+                    self.refresh_network();
+                }
 
-                "Ethernet, IPv4, ARP, DHCP, DNS, TCP and UDP are not implemented. The VirtIO network driver is a future milestone."),
+                match self.net {
+                    Some(status) if status.present != 0 => {
+                        self.info_row(surface, x, &mut cy, width, theme, "Adapter", "Intel 82540EM (e1000)");
+                        self.info_row(surface, x, &mut cy, width, theme, "Link", if status.link_up != 0 { "Up" } else { "Down" });
+                        self.info_row(surface, x, &mut cy, width, theme, "Method", match status.dhcp_state {
+                            3 => "DHCP",
+                            1 => "DHCP discovering",
+                            2 => "DHCP requesting",
+                            4 => "DHCP failed",
+                            _ if status.configured != 0 => "Static",
+                            _ => "Unconfigured",
+                        });
+                        self.info_row(surface, x, &mut cy, width, theme, "IPv4", &if status.configured != 0 { ip_string(status.ip) } else { "-".to_string() });
+                        self.info_row(surface, x, &mut cy, width, theme, "Mask", &if status.configured != 0 { ip_string(status.mask) } else { "-".to_string() });
+                        self.info_row(surface, x, &mut cy, width, theme, "Gateway", &if status.configured != 0 { ip_string(status.gateway) } else { "-".to_string() });
+                        self.info_row(surface, x, &mut cy, width, theme, "DNS", &if status.configured != 0 { ip_string(status.dns) } else { "-".to_string() });
+                        self.info_row(surface, x, &mut cy, width, theme, "Lease", &if status.lease_remaining > 0 { format!("{} s remaining", status.lease_remaining) } else { "-".to_string() });
+                        self.info_row(surface, x, &mut cy, width, theme, "Traffic", &format!("{} RX / {} TX, {} errors", status.rx_packets, status.tx_packets, status.rx_errors + status.tx_errors + status.dropped));
+                        self.renew_button = Rect::new(x - content.x, cy + 4 - content.y, 160, 30);
+                        ui::draw_button(surface, Rect::new(x, cy + 4, 160, 30), "Renew DHCP", true, theme, false, status.link_up != 0);
+                    }
+                    _ => self.notice_block(surface, x, cy, width, theme, "No wired adapter", "No supported Ethernet controller was detected. Network configuration is unavailable."),
+                }
+            }
 
             4 => self.notice_block(surface, x, cy, width, theme, "No Bluetooth adapter",
 
@@ -2711,11 +2850,11 @@ impl SettingsApp {
 
                 cy += logo_card.h + 18;
 
-                surface.draw_text(x, cy, "Aster OS 0.3.0", HEADLINE, palette.text);
+                surface.draw_text(x, cy, "Aster OS 0.4.0", HEADLINE, palette.text);
 
                 cy += 36;
 
-                self.info_row(surface, x, &mut cy, width, theme, "Kernel", "aster 0.3.0 (higher half, x86_64)");
+                self.info_row(surface, x, &mut cy, width, theme, "Kernel", "aster 0.4.0 (higher half, x86_64)");
 
                 self.info_row(surface, x, &mut cy, width, theme, "ABI", "Aster ABI 1");
 
@@ -2885,6 +3024,16 @@ impl SettingsApp {
                     let value = ((lx - bx) as f32 / width as f32).clamp(0.0, 1.0);
 
                     return Some(Action::SetBrightness(value.max(0.3)));
+                }
+            }
+
+            3 => {
+                if self.renew_button.contains(lx, body_y) {
+                    let result = sys::net_renew_dhcp();
+                    self.net_updated = 0;
+                    if result < 0 {
+                        self.net = sys::net_status();
+                    }
                 }
             }
 
@@ -3313,6 +3462,371 @@ fn parse_factor(bytes: &[char], index: &mut usize) -> Option<f64> {
 
 // ===========================================================================
 
+pub struct NetworkApp {
+    status: Option<aster_abi::NetStatus>,
+
+    updated: u64,
+
+    input: String,
+
+    lines: Vec<String>,
+}
+
+impl NetworkApp {
+    fn new() -> Self {
+        Self {
+            status: None,
+            updated: 0,
+            input: String::new(),
+            lines: Vec::new(),
+        }
+    }
+
+    fn refresh(&mut self) {
+        self.status = sys::net_status();
+        self.updated = sys::time_ms();
+    }
+
+    fn tick(&mut self) {
+        if self.status.is_none() || sys::time_ms().saturating_sub(self.updated) > 900 {
+            self.refresh();
+        }
+    }
+
+    fn push(&mut self, line: String) {
+        self.lines.push(line);
+        if self.lines.len() > 9 {
+            self.lines.remove(0);
+        }
+    }
+
+    fn run_query(&mut self) {
+        let query = self.input.trim().to_string();
+        if query.is_empty() {
+            self.push("usage: enter an IPv4 address or a DNS name".to_string());
+            return;
+        }
+        if let Some(address) = parse_ipv4(&query) {
+            match sys::net_ping(address, 2000) {
+                Ok(rtt) => self.push(format!("ping {}: reply in {} ms", query, rtt)),
+                Err(code) => self.push(format!("ping {}: failed (errno {})", query, -code)),
+            }
+        } else {
+            match sys::net_dns(&query, 2500) {
+                Ok(address) => self.push(format!("dns {}: {}", query, ip_string(address))),
+                Err(code) => self.push(format!("dns {}: failed (errno {})", query, -code)),
+            }
+        }
+    }
+
+    fn draw(&mut self, surface: &mut Surface, content: Rect, theme: &Theme) {
+        let palette = theme.palette();
+        surface.fill_rect(content, palette.surface);
+
+        if self.status.is_none() || sys::time_ms().saturating_sub(self.updated) > 900 {
+            self.refresh();
+        }
+
+        let x = content.x + 20;
+        let mut y = content.y + 18;
+        surface.draw_text(x, y, "Network", TITLE, palette.text);
+        y += 30;
+        surface.draw_text(
+            x,
+            y,
+            "Wired Ethernet diagnostics using the live kernel network stack.",
+            CAPTION,
+            palette.secondary,
+        );
+        y += 24;
+
+        let card = Rect::new(x, y, content.w - 40, 168);
+        ui::draw_card(surface, card, theme);
+
+        let status = self.status;
+        let present = status.map(|value| value.present != 0).unwrap_or(false);
+        let configured = status.map(|value| value.configured != 0).unwrap_or(false);
+        let link_up = status.map(|value| value.link_up != 0).unwrap_or(false);
+
+        let left = [
+            (
+                "Adapter",
+                if present {
+                    "Intel 82540EM (e1000)".to_string()
+                } else {
+                    "Not detected".to_string()
+                },
+            ),
+            (
+                "Link",
+                if link_up {
+                    "Up".to_string()
+                } else {
+                    "Down".to_string()
+                },
+            ),
+            (
+                "Method",
+                match status.map(|value| value.dhcp_state).unwrap_or(0) {
+                    3 => "DHCP (bound)".to_string(),
+                    1 => "DHCP (discovering)".to_string(),
+                    2 => "DHCP (requesting)".to_string(),
+                    4 => "DHCP failed".to_string(),
+                    _ => {
+                        if configured {
+                            "Static / configured".to_string()
+                        } else {
+                            "Unconfigured".to_string()
+                        }
+                    }
+                },
+            ),
+            (
+                "IPv4",
+                status
+                    .filter(|_| configured)
+                    .map(|value| ip_string(value.ip))
+                    .unwrap_or_else(|| "-".to_string()),
+            ),
+            (
+                "Mask",
+                status
+                    .filter(|_| configured)
+                    .map(|value| ip_string(value.mask))
+                    .unwrap_or_else(|| "-".to_string()),
+            ),
+        ];
+
+        let right = [
+            (
+                "Gateway",
+                status
+                    .filter(|_| configured)
+                    .map(|value| ip_string(value.gateway))
+                    .unwrap_or_else(|| "-".to_string()),
+            ),
+            (
+                "DNS",
+                status
+                    .filter(|_| configured)
+                    .map(|value| ip_string(value.dns))
+                    .unwrap_or_else(|| "-".to_string()),
+            ),
+            (
+                "MAC",
+                status
+                    .map(|value| {
+                        format!(
+                            "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+                            value.mac[0],
+                            value.mac[1],
+                            value.mac[2],
+                            value.mac[3],
+                            value.mac[4],
+                            value.mac[5]
+                        )
+                    })
+                    .unwrap_or_else(|| "-".to_string()),
+            ),
+            (
+                "Traffic",
+                status
+                    .map(|value| {
+                        format!(
+                            "{} RX / {} TX packets, {} errors",
+                            value.rx_packets,
+                            value.tx_packets,
+                            value.rx_errors + value.tx_errors + value.dropped
+                        )
+                    })
+                    .unwrap_or_else(|| "-".to_string()),
+            ),
+            (
+                "Lease",
+                status
+                    .filter(|value| value.lease_remaining > 0)
+                    .map(|value| format!("{} s remaining", value.lease_remaining))
+                    .unwrap_or_else(|| "-".to_string()),
+            ),
+        ];
+
+        let row_height = 28;
+        for (index, (label, value)) in left.iter().enumerate() {
+            let row_y = card.y + 12 + index as i32 * row_height;
+            surface.draw_text(card.x + 14, row_y, label, CAPTION, palette.secondary);
+            surface.draw_text(card.x + 88, row_y, value, BODY, palette.text);
+        }
+        for (index, (label, value)) in right.iter().enumerate() {
+            let row_y = card.y + 12 + index as i32 * row_height;
+            surface.draw_text(
+                card.x + card.w / 2 + 8,
+                row_y,
+                label,
+                CAPTION,
+                palette.secondary,
+            );
+            surface.draw_text(card.x + card.w / 2 + 78, row_y, value, BODY, palette.text);
+        }
+
+        y = card.bottom() + 16;
+
+        let renew = Rect::new(x, y, 148, 30);
+        let ping = Rect::new(x + 160, y, 148, 30);
+        ui::draw_button(
+            surface,
+            renew,
+            "Renew DHCP",
+            true,
+            theme,
+            false,
+            present && link_up,
+        );
+        ui::draw_button(
+            surface,
+            ping,
+            "Ping gateway",
+            false,
+            theme,
+            false,
+            configured,
+        );
+        y += 42;
+
+        surface.draw_text(
+            x,
+            y,
+            "Query: IPv4 address or DNS name",
+            CAPTION,
+            palette.secondary,
+        );
+        y += 18;
+        let field = Rect::new(x, y, (content.w - 40).min(420), 30);
+        surface.fill_rounded(field, 7, palette.elevated);
+        let text = if self.input.is_empty() {
+            "type an address or name, then press Enter"
+        } else {
+            self.input.as_str()
+        };
+        surface.draw_text(
+            field.x + 10,
+            field.y + 7,
+            text,
+            BODY,
+            if self.input.is_empty() {
+                palette.tertiary
+            } else {
+                palette.text
+            },
+        );
+        y += 42;
+
+        let results = Rect::new(x, y, content.w - 40, (content.bottom() - y - 16).max(60));
+        ui::draw_card(surface, results, theme);
+        surface.draw_text(
+            results.x + 12,
+            results.y + 10,
+            "Results",
+            BODY_MEDIUM,
+            palette.text,
+        );
+        let mut line_y = results.y + 34;
+        for line in &self.lines {
+            ui::draw_text_truncated(
+                surface,
+                results.x + 12,
+                line_y,
+                line,
+                MONO,
+                palette.secondary,
+                results.w - 24,
+            );
+            line_y += 18;
+        }
+    }
+
+    fn mouse(&mut self, x: i32, y: i32, content: Rect) -> Option<Action> {
+        let (lx, ly) = local(content, x, y);
+        let bx = 20;
+        let buttons_y = 18 + 30 + 24 + 168 + 16;
+        if ly >= buttons_y && ly <= buttons_y + 30 {
+            if lx >= bx && lx <= bx + 148 {
+                let result = sys::net_renew_dhcp();
+                if result < 0 {
+                    self.push(format!("renew DHCP failed (errno {})", -result));
+                } else {
+                    self.push("renew DHCP requested".to_string());
+                }
+                self.refresh();
+            } else if lx >= bx + 160 && lx <= bx + 308 {
+                if let Some(status) = self.status {
+                    match sys::net_ping(status.gateway, 2000) {
+                        Ok(rtt) => self.push(format!(
+                            "ping {}: reply in {} ms",
+                            ip_string(status.gateway),
+                            rtt
+                        )),
+                        Err(code) => self.push(format!(
+                            "ping {}: failed (errno {})",
+                            ip_string(status.gateway),
+                            -code
+                        )),
+                    }
+                } else {
+                    self.push("ping: no network adapter".to_string());
+                }
+            }
+        }
+        None
+    }
+
+    fn key(&mut self, event: &InputEvent) -> Option<Action> {
+        if event.value != 1 {
+            return None;
+        }
+        match event.code {
+            keys::ENTER => self.run_query(),
+            keys::ESC => self.input.clear(),
+            keys::BACKSPACE => {
+                self.input.pop();
+            }
+            code if code >= 32 && code < 127 => {
+                if self.input.len() < 48 {
+                    self.input.push(code as u8 as char);
+                }
+            }
+            _ => {}
+        }
+        None
+    }
+}
+
+fn ip_string(address: [u8; 4]) -> String {
+    format!(
+        "{}.{}.{}.{}",
+        address[0], address[1], address[2], address[3]
+    )
+}
+
+fn parse_ipv4(text: &str) -> Option<[u8; 4]> {
+    let mut parts = text.split('.');
+    let mut address = [0u8; 4];
+    for index in 0..4 {
+        let part = parts.next()?;
+        if part.is_empty() || part.len() > 3 {
+            return None;
+        }
+        let value: u16 = part.parse().ok()?;
+        if value > 255 {
+            return None;
+        }
+        address[index] = value as u8;
+    }
+    if parts.next().is_some() {
+        return None;
+    }
+    Some(address)
+}
+
 pub struct MonitorApp {
     info: Option<SystemInfo>,
 
@@ -3323,6 +3837,8 @@ pub struct MonitorApp {
     activity: Vec<f32>,
 
     storage: Option<StorageDetails>,
+
+    net: Option<aster_abi::NetStatus>,
 
     logs: [u8; 3072],
 
@@ -3349,6 +3865,8 @@ impl MonitorApp {
             activity: vec![0.0; 80],
 
             storage: None,
+
+            net: None,
 
             logs: [0; 3072],
 
@@ -3423,6 +3941,8 @@ impl MonitorApp {
         self.processes.extend_from_slice(&buffer[..count]);
 
         self.storage = sys::storage_details();
+
+        self.net = sys::net_status();
 
         let logged = sys::log_read(&mut self.logs);
 
@@ -3500,9 +4020,25 @@ impl MonitorApp {
                     })
                     .unwrap_or_else(|| "-".to_string()),
             ),
+            (
+                "Network",
+                self.net
+                    .map(|status| {
+                        if status.configured != 0 {
+                            ip_string(status.ip)
+                        } else if status.present == 0 {
+                            "No NIC".to_string()
+                        } else if status.link_up != 0 {
+                            "No address".to_string()
+                        } else {
+                            "Link down".to_string()
+                        }
+                    })
+                    .unwrap_or_else(|| "-".to_string()),
+            ),
         ];
 
-        let card_w = (content.w - 40 - 5 * 12) / 6;
+        let card_w = (content.w - 40 - (cards.len() as i32 - 1) * 12) / cards.len() as i32;
 
         for (index, (label, value)) in cards.iter().enumerate() {
             let rect = Rect::new(x + index as i32 * (card_w + 12), y, card_w, 64);
@@ -3515,6 +4051,29 @@ impl MonitorApp {
         }
 
         y += 80;
+
+        if let Some(net) = self.net {
+            surface.draw_text(
+                x,
+                y,
+                &format!(
+                    "eth0  {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}   RX {} / TX {} packets   {} errors",
+                    net.mac[0],
+                    net.mac[1],
+                    net.mac[2],
+                    net.mac[3],
+                    net.mac[4],
+                    net.mac[5],
+                    net.rx_packets,
+                    net.tx_packets,
+                    net.rx_errors + net.tx_errors + net.dropped
+                ),
+                CAPTION,
+                palette.secondary,
+            );
+        }
+
+        y += 20;
 
         let graph_w = (content.w - 52) / 2;
 
