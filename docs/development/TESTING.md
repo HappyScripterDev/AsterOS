@@ -20,7 +20,14 @@ python tools/test.py --ui
 python tools/ui_test.py
 python tools/graphics_test.py
 python tools/gfx_test.py
+python tools/motion_test.py
+python tools/perf_test.py
 python tools/app_probe.py
+
+# QEMU TCG can lose PIT ticks while the guest is CPU-bound, so guest time can
+# run slower than wall time. The pixel tests use generous waits for time-based
+# animations; the compositor itself always uses absolute millisecond time.
+
 python tools/pointer_test.py
 python tools/wm_probe.py
 python tools/storage_probe.py
@@ -153,7 +160,8 @@ desktop's own frame-time log. Results are recorded in
 | Persistent home | Implemented | Yes | write/reboot/read plus host FAT verification |
 | Missing/corrupt data disk | Implemented | Yes | desktop boots; mount rejected; no fault |
 | Networking | Implemented (IPv4) | Yes | `net_test.py`: DHCP, ICMP, TCP echo + 64 KiB bulk, UDP echo, DNS |
-| Graphics/motion | Implemented for milestone | Yes | `graphics_test.py` pixel checks; `cargo test -p aster-motion` |
+| Graphics/motion | Implemented for milestone | Yes | `graphics_test.py` pixel checks; `gfx_test.py` engine checks; `motion_test.py` host suite |
+| Graphics performance | Implemented for milestone | Yes | `perf_test.py` reads compositor frame stats; smoke test only under QEMU TCG |
 | Window overview/switcher/tabs | Implemented/partial | Yes | F3 overview, held-Alt switcher, Text tabs in `graphics_test.py` |
 | Audio | Not applicable | - | not implemented |
 | SMP/APIC | Not applicable | - | not implemented |

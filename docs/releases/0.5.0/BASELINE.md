@@ -75,7 +75,7 @@ extension. Audit against the extended engine brief:
 | HiDPI 1.25/1.5/2.0 | **NOT DONE**; `ui_scale` is a persisted foundation only |
 | VirtIO-GPU scanout/`FB_PRESENT` | **NOT DONE**; GOP direct present only |
 | SIMD raster paths | **PARTIAL**; SSE2 row fill/copy for opaque rectangles and window blits, scalar alpha/text |
-| Social/scratch tests `gfx_test`, `motion_test`, `stage_test`, `perf_test` | **PARTIAL**; `graphics_test.py` and motion unit tests exist |
+| Social/scratch tests `gfx_test`, `motion_test`, `stage_test`, `perf_test` | **PARTIAL**; `gfx_test.py`, `motion_test.py` and `perf_test.py` exist; `stage_test.py` has no feature to test |
 
 The extension starts from a clean working tree and a green 0.4/0.5 regression
 suite. Features are added incrementally; unimplemented items remain listed here
@@ -144,3 +144,29 @@ only the changed rows of a text view) remains a documented gap.
   three marks even though the specification called for four.
 - New `tools/gfx_test.py` covers moved-window surface restoration, fullscreen
   dock hiding/restore, pager jumps and the edge-dwell desktop drop.
+
+## 9. Remaining gaps after the extension
+
+The following brief items are deliberately not claimed:
+
+- **Stage Manager / window groups.** No stage strip, grouped windows or stage
+  transitions exist. `stage_test.py` is therefore absent; adding a test without
+  the feature would be a placeholder.
+- **HiDPI 1.25/1.5/2.0.** `ui_scale` is persisted and surfaced in Settings but
+  the compositor still lays out and rasterizes at 1.0. Implementing this needs a
+  full logical-pixel transform and a scaled text/raster path; it is not faked
+  with a larger font.
+- **VirtIO-GPU scanout and `FB_PRESENT(47)`.** No virtio-gpu driver, no resource
+  creation, no scanout buffer and no new syscall were added. The GOP framebuffer
+  is the only present path, so GPU rasterization is never claimed.
+- **App-internal damage.** Window surfaces are cached and invalidated at window
+  granularity; apps do not expose changed rows yet.
+- **Multi-monitor / runtime mode setting.** Display structures remain a
+  foundation only.
+
+Delivered instead, with tests: live glass and materials, material/fullscreen
+UI, fullscreen windows, top-bar pager, live Alt-Tab thumbnails, per-window
+surfaces, window-level damage, a coalescing heap, SSE2 opaque rows, desktop drag
+and the four-desktop model. `tools/gfx_test.py`, `tools/motion_test.py` and
+`tools/perf_test.py` cover the new engine paths; the existing 0.4/0.5 suite
+remains green.

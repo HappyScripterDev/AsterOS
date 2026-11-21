@@ -998,7 +998,7 @@ impl Desktop {
             }
 
             let elapsed = sys::time_ms().saturating_sub(frame_start);
-            if self.frames == 0 || self.stats.frames <= 3 || self.stats.frames % 120 == 0 {
+            if self.frames <= 10 || self.stats.frames % 60 == 0 {
                 let average = if self.stats.average_frame_ms > 0.0 {
                     self.stats.average_frame_ms
                 } else {

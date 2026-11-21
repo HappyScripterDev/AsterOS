@@ -35,8 +35,10 @@ This is the honest list of what 0.5.0 does not do or does with weaker guarantees
 - Buttons, toggles, checkboxes, sliders and dialog backdrops still change state
   immediately; only menus, toasts, windows, dock, workspace, overview and switcher
   animate.
-- Drag-to-reorder tabs, tab tear-out, window groups and reorder animations are not
-  implemented.
+- Drag-to-reorder tabs, tab tear-out, Stage Manager, window groups and reorder
+  animations are not implemented.
+- `perf_test.py` is a smoke test over the compositor's own frame log, not a
+  benchmark; QEMU TCG wall time is not representative of hardware.
 - Smooth scrolling is Text Page Up/Down only. The PS/2 input path has no wheel
   events, so mouse-wheel scrolling is not available.
 - The Overview shows the current window set at open; newly opened windows while
@@ -50,14 +52,15 @@ This is the honest list of what 0.5.0 does not do or does with weaker guarantees
 
 ## Display, scaling and hardware
 
-- One display at 1280×800, scale factor 1.0. `Display`/`DisplaySet` and `ui_scale`
-  are foundations, not implemented multi-monitor/HiDPI support.
+- One display at 1280×800. HUD and UI scale 1.25/1.5/2.0 are **not implemented**:
+  `ui_scale` is persisted and exposed, but the compositor still lays out at 1.0.
+  `Display`/`DisplaySet` remain a multi-monitor foundation only.
 - No runtime resolution change, rotation, monitor arrangement or per-monitor
   workspace.
 - No accessibility tree, screen reader, high-contrast mode or keyboard focus ring
   on every component.
-- No GPU backend interface implementation; no backend will be claimed until real
-  hardware acceleration exists.
+- No VirtIO-GPU scanout and no `FB_PRESENT(47)`. The compositor presents directly
+  to the GOP framebuffer; there is no GPU backend, and no acceleration is claimed.
 
 ## Resource management and stability
 
