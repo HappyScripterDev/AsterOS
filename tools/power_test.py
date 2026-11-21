@@ -47,10 +47,14 @@ def move_to(qmp: Qmp, target: tuple[int, int]) -> None:
     time.sleep(0.2)
 
 
-def click(qmp: Qmp) -> None:
-    qmp.command("input-send-event", events=[{"type": "btn", "data": {"down": True, "button": "left"}}])
-    time.sleep(0.1)
-    qmp.command("input-send-event", events=[{"type": "btn", "data": {"down": False, "button": "left"}}])
+def click(qmp: Qmp, may_disconnect: bool = False) -> None:
+    try:
+        qmp.command("input-send-event", events=[{"type": "btn", "data": {"down": True, "button": "left"}}])
+        time.sleep(0.1)
+        qmp.command("input-send-event", events=[{"type": "btn", "data": {"down": False, "button": "left"}}])
+    except (ConnectionResetError, ConnectionAbortedError, OSError):
+        if not may_disconnect:
+            raise
     time.sleep(0.8)
 
 
@@ -144,7 +148,7 @@ def main() -> int:
         click(boot.qmp)
         time.sleep(2.0)
         move_to(boot.qmp, (741, 458))
-        click(boot.qmp)
+        click(boot.qmp, may_disconnect=True)
         if not boot.wait_log("acpi: reset requested"):
             failures.append("desktop restart confirmation did not reach the ACPI reset path")
         if not boot.wait_exit():

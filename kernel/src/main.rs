@@ -104,6 +104,7 @@ pub extern "C" fn kernel_main(boot_info_address: u64) -> ! {
 
     mm::pmm::init();
     mm::vmm::init();
+    arch::apic::init();
     mm::heap::init();
 
     if !mm::heap::self_test() {

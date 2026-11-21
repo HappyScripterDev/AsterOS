@@ -247,20 +247,38 @@ extern "C" fn isr_dispatch(frame: *mut InterruptFrame) {
     match vector {
         VECTOR_TIMER => {
             crate::time::tick();
-            unsafe { pic::eoi(0) };
+            if crate::arch::apic::active() {
+                crate::arch::apic::note_vector(VECTOR_TIMER);
+                crate::arch::apic::eoi();
+            } else {
+                unsafe { pic::eoi(0) };
+            }
             crate::sched::timer_tick(frame);
         }
         VECTOR_KEYBOARD => {
             crate::drivers::ps2::handle_keyboard();
-            unsafe { pic::eoi(1) };
+            if crate::arch::apic::active() {
+                crate::arch::apic::note_vector(VECTOR_KEYBOARD);
+                crate::arch::apic::eoi();
+            } else {
+                unsafe { pic::eoi(1) };
+            }
         }
         VECTOR_MOUSE => {
             crate::drivers::ps2::handle_mouse();
-            unsafe { pic::eoi(12) };
+            if crate::arch::apic::active() {
+                crate::arch::apic::note_vector(VECTOR_MOUSE);
+                crate::arch::apic::eoi();
+            } else {
+                unsafe { pic::eoi(12) };
+            }
         }
         _ => {
-            // Spurious IRQ: send EOI anyway; no handler is registered.
-            if (32..48).contains(&vector) {
+            if crate::arch::apic::active() {
+                if (32..48).contains(&vector) {
+                    crate::arch::apic::eoi();
+                }
+            } else if (32..48).contains(&vector) {
                 unsafe { pic::eoi((vector - 32) as u8) };
             }
         }

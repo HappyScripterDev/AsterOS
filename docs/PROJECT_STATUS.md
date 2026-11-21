@@ -35,11 +35,11 @@ Desktop: Aster Desktop (ring 3, software compositor, dirty-region renderer)
 | 1 Build infrastructure | COMPLETED | Reproducible image, QEMU runner, firmware fetch, tests |
 | 2 First boot | COMPLETED | UEFI -> higher-half kernel -> serial |
 | 3 Core kernel | PARTIAL | Memory, interrupts, scheduler, syscalls, spawn/wait, IPC, persistence; APIC/SMP and quotas missing |
-| 4 Drivers/user space | PARTIAL | Serial, GOP, PS/2, PCI, AHCI, e1000; ACPI/APIC, USB, audio, GPU missing |
+| 4 Drivers/user space | PARTIAL | Serial, GOP, PS/2, PCI, polling AHCI/e1000; ACPI fixed tables, LAPIC/IOAPIC; USB, audio, GPU and MSI missing |
 | 5 Graphics/desktop | PARTIAL | Dirty compositor, motion engine, window state machine, Dock 2.0, overview, switcher, tabs, effects/settings; no GPU, HiDPI, live backdrop blur or full component motion |
 | 6 Applications | PARTIAL | 10 real apps, Text tabs; Store/Installer/Update/Browser absent |
 | 7 Networking | PARTIAL | e1000 + IPv4 client stack; IPv6/TLS absent, polling only |
-| 8 Advanced | NOT STARTED | USB, audio, NVMe, power, SDK |
+| 8 Advanced | PARTIAL | ACPI power and APIC/IOAPIC; USB, NVMe, audio, SDK missing |
 | 9 Release | NOT STARTED | Optimization, hardware validation, installer media |
 
 ## Component status

@@ -91,3 +91,9 @@ pub unsafe fn init() {
     clear_mask(2);
     clear_mask(12);
 }
+
+/// Mask every 8259 source. Used when the Local APIC/IOAPIC takes over.
+pub unsafe fn mask_all() {
+    outb(0x21, 0xFF);
+    outb(0xA1, 0xFF);
+}

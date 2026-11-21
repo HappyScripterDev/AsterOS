@@ -12,7 +12,7 @@ verified during the recorded milestone session. Limitations are explicit.
 | Higher-half kernel | Implemented | Yes | Image at `0xFFFFFFFF80000000`, direct map at `0xFFFF800000000000` |
 | GDT/TSS/IDT | Implemented | Yes | Ring 3 transitions, TSS RSP0, IST double fault |
 | Exceptions | Implemented | Yes | Registers + CR2, user faults kill the process, fatal kernel faults halt |
-| PIC + PIT | Implemented | Yes | 1 kHz; no APIC/HPET |
+| PIC + PIT | Implemented | Yes | 1 kHz PIT; IRQ 0 routed through IOAPIC GSI 2 when APIC is active; PIC fallback |
 | PMM | Implemented | Yes | Bitmap, 32 GiB max, reservations, zeroing |
 | VMM / paging | Implemented | Yes | Per-process PML4, NX, W^X, U/S at every level |
 | Kernel heap | Implemented | Yes | First-fit, 48-256 MiB virtual limit, self-test |
@@ -28,7 +28,8 @@ verified during the recorded milestone session. Limitations are explicit.
 | PS/2 mouse | Implemented | Yes | Absolute pointer, buttons; no wheel |
 | PCI configuration | Partial | Yes | Mechanism #1; AHCI found by class, e1000 by vendor/device; full enumeration/ACPI planned |
 | ACPI | Partial | Yes | RSDP/XSDT/FADT/MADT/MCFG/HPET validated; S5 shutdown and reset; no AML interpreter or SCI power button |
-| APIC / SMP | Not implemented | - | Single CPU, 8259 |
+| Power management | Partial | Yes | ACPI S5 and FADT reset via POWER 47; Terminal and confirmed desktop menu; no sleep/battery/thermal |
+| APIC / SMP | Partial | Yes | LAPIC, IOAPIC and ISA routing active with PIC fallback; no MSI, APIC timer, IPIs or SMP |
 | VirtIO block/network | Not implemented | - | AHCI is used for the data disk; no VirtIO devices |
 | AHCI (q35) | Implemented | Yes | Polling, IDENTIFY, single-sector DMA read/write, FLUSH CACHE EXT; NVMe/USB/audio/GPU absent |
 | Intel 82540EM (e1000) | Implemented | Yes | MMIO BAR0, EEPROM MAC, 256 RX / 32 TX descriptors, polling, no IRQ; QEMU only |

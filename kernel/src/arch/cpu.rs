@@ -126,3 +126,22 @@ pub fn vendor() -> ([u8; 12], u32) {
     bytes[8..12].copy_from_slice(&ecx.to_le_bytes());
     (bytes, max_leaf)
 }
+
+/// Read a model-specific register.
+pub unsafe fn rdmsr(msr: u32) -> u64 {
+    let low: u32;
+    let high: u32;
+    core::arch::asm!("rdmsr", in("ecx") msr, out("eax") low, out("edx") high, options(nomem, nostack));
+    ((high as u64) << 32) | low as u64
+}
+
+/// Write a model-specific register.
+pub unsafe fn wrmsr(msr: u32, value: u64) {
+    core::arch::asm!(
+        "wrmsr",
+        in("ecx") msr,
+        in("eax") value as u32,
+        in("edx") (value >> 32) as u32,
+        options(nomem, nostack)
+    );
+}
