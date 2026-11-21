@@ -37,3 +37,15 @@ Measured from the `acpi_test`/`apic_test` serial logs on this host (q35, 1 vCPU,
 
 MSI, the APIC timer, USB input latency, Device Manager enumeration time and PS/2
 wheel latency are not implemented and therefore have no measurements.
+
+## Update: APIC timer and interrupt-driven I/O
+
+- HPET period 10,000,000 fs (100 MHz); APIC timer calibrated at ~62,988-63,408
+  ticks/ms depending on the run.
+- First desktop frame after the switch: ~1.21 s under TCG, 88 ms draw, 14 ms
+  present. Later idle frames report 20-24 ms draw in the sampled logs.
+- AHCI MSI completion: persistence write/reboot/read passes with the interrupt
+  flag; no command timeout was logged.
+- e1000: first RX interrupt `ICR 0x83`; DHCP binds after the interrupt is armed.
+  RX is drained on the interrupt flag with a 1 s watchdog.
+- No interrupt-latency microbenchmark is claimed.

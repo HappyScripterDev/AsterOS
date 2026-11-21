@@ -27,6 +27,8 @@ static EOI_COUNT: AtomicU32 = AtomicU32::new(0);
 static TIMER_SEEN: AtomicBool = AtomicBool::new(false);
 static KEYBOARD_SEEN: AtomicBool = AtomicBool::new(false);
 static MOUSE_SEEN: AtomicBool = AtomicBool::new(false);
+static TIMER_ACTIVE: AtomicBool = AtomicBool::new(false);
+static APIC_TIMER_SEEN: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy)]
 struct Route {
@@ -109,6 +111,106 @@ pub fn backend() -> &'static str {
     } else {
         "pic"
     }
+}
+
+/// Route a legacy/PCI INTx line through the IOAPIC when APIC mode is active.
+pub fn route_pci_line(irq: u8, vector: u8) -> bool {
+    if !ACTIVE.load(Ordering::Relaxed) {
+        return false;
+    }
+    route_irq(irq, vector)
+}
+
+pub fn id() -> u8 {
+    ((lapic_read(REG_ID) >> 24) & 0xFF) as u8
+}
+
+pub fn timer_active() -> bool {
+    TIMER_ACTIVE.load(Ordering::Relaxed)
+}
+
+pub fn note_apic_timer() {
+    if !APIC_TIMER_SEEN.swap(true, Ordering::Relaxed) {
+        crate::info!("apic: first APIC timer tick on vector 63");
+    }
+}
+
+fn hpet_wait_us(hpet: u64, period_fs: u64, microseconds: u64) -> bool {
+    if period_fs == 0 {
+        return false;
+    }
+    // The main counter only runs when ENABLE_CNF is set.
+    let configuration = unsafe { ((hpet + 0x10) as *const u64).read_volatile() };
+    unsafe {
+        ((hpet + 0x10) as *mut u64).write_volatile(configuration | 1);
+    }
+    let ticks = (microseconds.saturating_mul(1_000_000_000)) / period_fs;
+    let start = unsafe { ((hpet + 0xF0) as *const u64).read_volatile() };
+    for _ in 0..50_000_000u32 {
+        let now = unsafe { ((hpet + 0xF0) as *const u64).read_volatile() };
+        if now.wrapping_sub(start) >= ticks {
+            return true;
+        }
+        core::hint::spin_loop();
+    }
+    false
+}
+
+fn ioapic_mask_gsi(gsi: u32) {
+    if gsi >= IOAPIC_ENTRIES.load(Ordering::Relaxed) as u32 {
+        return;
+    }
+    let low = ioapic_read(0x10 + gsi * 2);
+    ioapic_write(0x10 + gsi * 2, low | (1 << 16));
+}
+
+/// Calibrate the Local APIC timer against the ACPI HPET and move the 1 kHz
+/// scheduler tick to vector 63. The PIT route stays active if this fails.
+fn timer_init() -> bool {
+    let Some((hpet_physical, _period, _comparators)) = crate::arch::acpi::hpet() else {
+        crate::warn!("apic-timer: no HPET, keeping the PIT tick");
+        return false;
+    };
+    let hpet = match crate::mm::vmm::map_kernel_mmio(hpet_physical, 0x1000) {
+        Ok(address) => address,
+        Err(error) => {
+            crate::warn!("apic-timer: cannot map HPET: {}", error);
+            return false;
+        }
+    };
+    let capabilities = unsafe { ((hpet + 0x00) as *const u64).read_volatile() };
+    let period_fs = capabilities >> 32;
+    if period_fs == 0 {
+        crate::warn!("apic-timer: HPET reports a zero period, keeping the PIT tick");
+        return false;
+    }
+
+    lapic_write(0x3E0, 0x3);
+    lapic_write(0x320, 63 | (1 << 16));
+    lapic_write(0x380, 0xFFFF_FFFF);
+    if !hpet_wait_us(hpet, period_fs, 10_000) {
+        crate::warn!("apic-timer: HPET counter did not advance, keeping the PIT tick");
+        lapic_write(0x380, 0);
+        return false;
+    }
+    let remaining = lapic_read(0x390);
+    let elapsed = 0xFFFF_FFFFu32.saturating_sub(remaining);
+    if elapsed < 100 {
+        crate::warn!("apic-timer: calibration produced {} ticks", elapsed);
+        lapic_write(0x380, 0);
+        return false;
+    }
+    let ticks_per_ms = (elapsed / 10).max(1);
+    lapic_write(0x320, 63 | (1 << 17));
+    lapic_write(0x380, ticks_per_ms);
+    ioapic_mask_gsi(crate::arch::acpi::gsi_for_irq(0).0);
+    TIMER_ACTIVE.store(true, Ordering::Relaxed);
+    crate::info!(
+        "apic-timer: calibrated {} ticks/ms (HPET {} fs), 1 kHz on vector 63, PIT route masked",
+        ticks_per_ms,
+        period_fs
+    );
+    true
 }
 
 /// Note a routed interrupt for the one-time proof logs and Monitor counters.
@@ -234,5 +336,6 @@ pub fn init() -> bool {
         "apic: active, PIC masked, EOI -> LAPIC, spurious vector {}",
         SPURIOUS_VECTOR
     );
+    timer_init();
     true
 }

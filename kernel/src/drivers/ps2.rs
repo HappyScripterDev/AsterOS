@@ -26,7 +26,8 @@ struct State {
     caps: bool,
     extended: bool,
     mouse_cycle: u8,
-    mouse_packet: [u8; 3],
+    mouse_packet: [u8; 4],
+    mouse_packet_size: u8,
     mouse_x: i32,
     mouse_y: i32,
     mouse_buttons: u32,
@@ -40,7 +41,8 @@ static STATE: IrqLock<State> = IrqLock::new(State {
     caps: false,
     extended: false,
     mouse_cycle: 0,
-    mouse_packet: [0; 3],
+    mouse_packet: [0; 4],
+    mouse_packet_size: 3,
     mouse_x: 640,
     mouse_y: 400,
     mouse_buttons: 0,
@@ -86,6 +88,7 @@ impl Queue {
 static QUEUE: IrqLock<Queue> = IrqLock::new(Queue::new());
 static KEYBOARD_SEEN: AtomicBool = AtomicBool::new(false);
 static MOUSE_SEEN: AtomicBool = AtomicBool::new(false);
+static WHEEL_SEEN: AtomicBool = AtomicBool::new(false);
 
 #[inline]
 unsafe fn inb(port: u16) -> u8 {
@@ -164,8 +167,25 @@ pub fn init() {
         controller_command(0x60);
         keyboard_write(config);
 
-        // Mouse defaults and data reporting.
+        // Mouse defaults, then the IntelliMouse magic sample-rate sequence.
         mouse_command(0xF6);
+        mouse_command(0xF3);
+        mouse_command(0xC8);
+        mouse_command(0xF3);
+        mouse_command(0x64);
+        mouse_command(0xF3);
+        mouse_command(0x50);
+        mouse_command(0xF2);
+        let id = read_data();
+        let wheel = id == 3 || id == 4;
+        if wheel {
+            mouse_command(0xF3);
+            mouse_command(0x64);
+            crate::info!("ps2: IntelliMouse wheel enabled (id {})", id);
+        } else {
+            crate::info!("ps2: standard 3-byte mouse (id {})", id);
+        }
+        STATE.lock().mouse_packet_size = if wheel { 4 } else { 3 };
         mouse_command(0xF4);
 
         controller_command(0xAE); // enable keyboard
@@ -429,10 +449,11 @@ pub fn handle_mouse() {
         crate::info!("ps2: first mouse byte {:#x}", byte);
     }
     let mut state = STATE.lock();
+    let size = state.mouse_packet_size.clamp(3, 4) as u8;
     let cycle = state.mouse_cycle as usize;
     state.mouse_packet[cycle] = byte;
     state.mouse_cycle += 1;
-    if state.mouse_cycle < 3 {
+    if state.mouse_cycle < size {
         return;
     }
     state.mouse_cycle = 0;
@@ -440,6 +461,17 @@ pub fn handle_mouse() {
     if packet[0] & 0x08 == 0 {
         return; // out of sync
     }
+    let wheel = if size == 4 {
+        let raw = (packet[3] & 0x0F) as i8;
+        let value = if raw & 0x08 != 0 { raw - 16 } else { raw };
+        if value != 0 {
+            Some(value)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     let dx = packet[1] as i8 as i32;
     let dy = packet[2] as i8 as i32;
     let buttons = (packet[0] & 0x07) as u32;
@@ -462,6 +494,22 @@ pub fn handle_mouse() {
         mods: 0,
     };
     QUEUE.lock().push(position);
+
+    if let Some(delta) = wheel {
+        let event = InputEvent {
+            kind: InputKind::MouseWheel as u32,
+            code: 0,
+            value: delta as i32,
+            x: state.mouse_x,
+            y: state.mouse_y,
+            buttons,
+            mods: 0,
+        };
+        QUEUE.lock().push(event);
+        if !WHEEL_SEEN.swap(true, Ordering::Relaxed) {
+            crate::info!("ps2: first wheel event {}", delta);
+        }
+    }
 
     if buttons != state.mouse_buttons {
         let changed = buttons ^ state.mouse_buttons;

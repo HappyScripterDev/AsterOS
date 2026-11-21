@@ -281,6 +281,7 @@ pub mod sys {
     pub const RECV: u64 = 45;
     pub const SOCKET_CLOSE: u64 = 46;
     pub const POWER: u64 = 47;
+    pub const DEVICES: u64 = 48;
 }
 
 /// Error codes returned in `rax` by system calls. Negative values are errors.
@@ -319,6 +320,40 @@ pub enum InputKind {
     MouseMove = 2,
     MouseButton = 3,
     MouseWheel = 4,
+}
+
+/// One PCI function reported by the DEVICES syscall.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct DeviceInfo {
+    pub bus: u8,
+    pub device: u8,
+    pub function: u8,
+    pub class: u8,
+    pub subclass: u8,
+    pub prog_if: u8,
+    pub irq: u8,
+    /// Bit 0: a kernel driver is bound.
+    pub flags: u8,
+    pub vendor: u16,
+    pub device_id: u16,
+    pub reserved: u32,
+}
+
+impl DeviceInfo {
+    pub const EMPTY: DeviceInfo = DeviceInfo {
+        bus: 0,
+        device: 0,
+        function: 0,
+        class: 0,
+        subclass: 0,
+        prog_if: 0,
+        irq: 0,
+        flags: 0,
+        vendor: 0,
+        device_id: 0,
+        reserved: 0,
+    };
 }
 
 #[repr(C)]

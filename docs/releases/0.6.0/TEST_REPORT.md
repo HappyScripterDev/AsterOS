@@ -53,3 +53,19 @@ Not present because the feature is absent: `tools/usb_test.py`,
   Device Manager, hardware inventory and PS/2 wheel. These are documented gaps,
   not passes.
 - No interrupt-latency or USB-latency measurement is claimed.
+
+## Update: interrupt, input and device phases
+
+| Command | Result |
+|---|---|
+| `python tools/apic_test.py` | PASS, including APIC timer calibration and first vector 63 tick |
+| `python tools/power_test.py` | PASS |
+| `python tools/input_test.py` | PASS (IntelliMouse wheel, Files scroll) |
+| `python tools/device_probe.py` | PASS (PCI inventory, Settings > Devices) |
+| `python tools/persistence_test.py` | PASS on AHCI MSI completion |
+| `python tools/ui_test.py`, `graphics_test.py` | PASS after the APIC timer switch |
+| `python tools/net_test.py` | PASS with e1000 RX/TX INTx |
+
+Observed: AHCI MSI vector 48; e1000 PCI INTx vector 49; APIC timer ~62,988
+ticks/ms calibrated from the HPET, vector 63; first RX interrupt `ICR 0x83`.
+USB xHCI and `usb_test.py` remain absent.

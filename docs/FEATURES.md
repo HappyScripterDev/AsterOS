@@ -18,21 +18,22 @@ verified during the recorded milestone session. Limitations are explicit.
 | Kernel heap | Implemented | Yes | First-fit, 48-256 MiB virtual limit, self-test |
 | Scheduler | Partial | Yes | Preemptive user threads; kernel threads cooperative; single CPU |
 | Context switching | Implemented | Yes | Callee-saved + FXSAVE, CR3 switch |
-| System calls | Partial | Yes | 47 numbers; POWER 47 (shutdown/restart), legacy SHUTDOWN 28; SET_THEME returns ENOSYS |
+| System calls | Partial | Yes | 48 numbers; POWER 47, DEVICES 48 (PCI inventory), legacy SHUTDOWN 28; SET_THEME returns ENOSYS |
 | Ring-3 processes | Implemented | Yes | Desktop PID 1 plus spawned children; private PML4, 64 KiB stack, W^X ELF |
 | IPC | Implemented | Yes | Bidirectional channels, handles, blocking send/recv with receive timeout, close/hangup; 8x256 B queues |
 | Process creation API | Implemented | Yes | `SPAWN`/`WAIT`; isolation test spawns a normal and a faulting child |
 | Serial console | Implemented | Yes | COM1, 115200 8N1, ring buffer |
 | Framebuffer | Implemented | Yes | GOP 1280x800, user mapping |
 | PS/2 keyboard | Implemented | Yes | ASCII + special keys, modifiers; no typematic repeat in guest |
-| PS/2 mouse | Implemented | Yes | Absolute pointer, buttons; no wheel |
+| PS/2 mouse | Implemented | Yes | Absolute pointer, buttons, IntelliMouse 4-byte wheel; Files scrolls on the wheel |
 | PCI configuration | Partial | Yes | Mechanism #1; AHCI found by class, e1000 by vendor/device; full enumeration/ACPI planned |
 | ACPI | Partial | Yes | RSDP/XSDT/FADT/MADT/MCFG/HPET validated; S5 shutdown and reset; no AML interpreter or SCI power button |
 | Power management | Partial | Yes | ACPI S5 and FADT reset via POWER 47; Terminal and confirmed desktop menu; no sleep/battery/thermal |
-| APIC / SMP | Partial | Yes | LAPIC, IOAPIC and ISA routing active with PIC fallback; no MSI, APIC timer, IPIs or SMP |
+| Device inventory | Implemented | Yes | `DEVICES` 48, Terminal `devices`, Settings > Devices; real PCI functions only |
+| APIC / SMP | Partial | Yes | LAPIC, IOAPIC, APIC timer (HPET-calibrated), dynamic vectors, MSI for AHCI and PCI INTx for e1000; no IPIs or SMP |
 | VirtIO block/network | Not implemented | - | AHCI is used for the data disk; no VirtIO devices |
-| AHCI (q35) | Implemented | Yes | Polling, IDENTIFY, single-sector DMA read/write, FLUSH CACHE EXT; NVMe/USB/audio/GPU absent |
-| Intel 82540EM (e1000) | Implemented | Yes | MMIO BAR0, EEPROM MAC, 256 RX / 32 TX descriptors, polling, no IRQ; QEMU only |
+| AHCI (q35) | Implemented | Yes | MSI completion interrupts, bounded polling fallback, IDENTIFY, single-sector DMA read/write, FLUSH CACHE EXT |
+| Intel 82540EM (e1000) | Implemented | Yes | MMIO BAR0, EEPROM MAC, 256 RX / 32 TX descriptors, RX/TX IOAPIC INTx interrupt, IFCS; QEMU 82540EM has no MSI cap |
 | Ethernet / ARP / IPv4 / ICMP | Implemented | Yes | ARP cache, header checksum, echo; no fragmentation/reassembly |
 | UDP / DHCP / DNS | Implemented | Yes | DHCP lease, DNS A records; UDP checksum not validated, no DHCPv6 |
 | TCP client | Implemented | Yes | Handshake, sliding window, retransmit, FIN/RST; no listen/accept, no SACK |

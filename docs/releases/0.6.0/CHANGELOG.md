@@ -30,3 +30,21 @@
   tests pass on the APIC path.
 - Not completed in this phase: MSI/MSI-X, APIC timer, interrupt-driven e1000 and
   AHCI. See `KNOWN_LIMITATIONS.md`.
+
+## Phase 3 - Timers, MSI, interrupt-driven devices, wheel and devices
+
+- Calibrated the Local APIC timer against the HPET and moved the 1 kHz tick to
+  vector 63 after successful calibration; the PIT/IOAPIC route is masked only on
+  success.
+- Added dynamic vectors 48-62 with handler registration, IRQ counters, MSI/MSI-X
+  capability walking and PCI INTx routing.
+- AHCI now uses MSI completion interrupts; e1000 uses IOAPIC INTx interrupts
+  because QEMU's 82540EM has no MSI capability. Both keep bounded fallbacks.
+- Added PS/2 IntelliMouse detection, wheel packets/events and Files wheel
+  scrolling.
+- Added the `DEVICES` syscall 48, Terminal `devices`, Settings > Devices and the
+  real PCI inventory.
+- Added `input_test.py` and `device_probe.py`; extended `apic_test.py` and the
+  performance notes. All existing tests pass.
+- Still missing: USB xHCI/HID/hotplug, Monitor device card, wheel in Text/Settings,
+  ACPI SCI power button. The 0.6.0 tag remains unset.

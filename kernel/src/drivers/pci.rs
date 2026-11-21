@@ -161,3 +161,123 @@ pub fn enable_device(device: &Device) {
 pub fn describe(device: &Device) -> (u16, u16) {
     (device.vendor, device.id)
 }
+
+/// Walk the PCI capability list for a capability id.
+pub fn find_capability(device: &Device, id: u8) -> Option<u8> {
+    let status = read16(device.bus, device.device, device.function, 0x06);
+    if status & (1 << 4) == 0 {
+        return None;
+    }
+    let mut pointer = (read16(device.bus, device.device, device.function, 0x34) & 0xFFFC) as u8;
+    for _ in 0..32 {
+        if pointer == 0 {
+            break;
+        }
+        let header = read32(device.bus, device.device, device.function, pointer);
+        if (header & 0xFF) as u8 == id {
+            return Some(pointer);
+        }
+        pointer = ((header >> 8) & 0xFC) as u8;
+    }
+    None
+}
+
+/// Enable one MSI vector on a device. Returns false when the device has no MSI
+/// capability; the caller then keeps polling.
+pub fn enable_msi(device: &Device, vector: u8) -> bool {
+    let Some(capability) = find_capability(device, 0x05) else {
+        return false;
+    };
+    let control = read16(device.bus, device.device, device.function, capability + 2);
+    let address = 0xFEE0_0000u32 | ((crate::arch::apic::id() as u32) << 12);
+    write32(
+        device.bus,
+        device.device,
+        device.function,
+        capability + 4,
+        address,
+    );
+    if control & (1 << 7) != 0 {
+        write32(
+            device.bus,
+            device.device,
+            device.function,
+            capability + 8,
+            0,
+        );
+        write16(
+            device.bus,
+            device.device,
+            device.function,
+            capability + 12,
+            vector as u16,
+        );
+    } else {
+        write16(
+            device.bus,
+            device.device,
+            device.function,
+            capability + 8,
+            vector as u16,
+        );
+    }
+    let mut enabled = read16(device.bus, device.device, device.function, capability + 2);
+    enabled &= !(0x7 << 4);
+    enabled |= 1;
+    write16(
+        device.bus,
+        device.device,
+        device.function,
+        capability + 2,
+        enabled,
+    );
+    true
+}
+
+/// PCI interrupt line from config space, or 0 when the device uses no INTx.
+pub fn interrupt_line(device: &Device) -> u8 {
+    (read32(device.bus, device.device, device.function, 0x3C) & 0xFF) as u8
+}
+
+/// Enumerate bus 0 and fill `out`. Returns the number of present functions.
+pub fn enumerate(out: &mut [aster_abi::DeviceInfo]) -> usize {
+    let mut count = 0usize;
+    for device in 0..32u8 {
+        for function in 0..8u8 {
+            let vendor = read32(0, device, function, 0) as u16;
+            if vendor == 0xFFFF {
+                continue;
+            }
+            if count >= out.len() {
+                return count;
+            }
+            let header = read32(0, device, function, 0x08);
+            let class = ((header >> 24) & 0xFF) as u8;
+            let subclass = ((header >> 16) & 0xFF) as u8;
+            let prog_if = ((header >> 8) & 0xFF) as u8;
+            let irq = (read32(0, device, function, 0x3C) & 0xFF) as u8;
+            let device_id = (read32(0, device, function, 0) >> 16) as u16;
+            let driver = (vendor == 0x8086 && device_id == 0x100E)
+                || (class == CLASS_STORAGE && subclass == SUBCLASS_SATA && prog_if == PROG_IF_AHCI);
+            out[count] = aster_abi::DeviceInfo {
+                bus: 0,
+                device,
+                function,
+                class,
+                subclass,
+                prog_if,
+                irq,
+                flags: if driver { 1 } else { 0 },
+                vendor,
+                device_id,
+                reserved: 0,
+            };
+            count += 1;
+            // A multi-function device may have more than one function.
+            if function == 0 && read32(0, device, 0, 0x0C) & (1 << 23) == 0 {
+                break;
+            }
+        }
+    }
+    count
+}

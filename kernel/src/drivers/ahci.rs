@@ -6,7 +6,7 @@
 //! a physically-contiguous buffer allocator exists.
 
 use alloc::vec::Vec;
-use core::sync::atomic::{fence, Ordering};
+use core::sync::atomic::{fence, AtomicBool, AtomicU64, AtomicU8, Ordering};
 
 use crate::drivers::pci;
 use crate::mm::{pmm, vmm};
@@ -14,6 +14,8 @@ use crate::sync::IrqLock;
 
 const HBA_CAP: u64 = 0x00;
 const HBA_GHC: u64 = 0x04;
+const HBA_IS: u64 = 0x08;
+const HBA_IE: u32 = 1 << 1;
 const HBA_PI: u64 = 0x0C;
 const HBA_AE: u32 = 1 << 31;
 
@@ -23,6 +25,7 @@ const PORT_FB: u64 = 0x08;
 const PORT_FBU: u64 = 0x0C;
 const PORT_IS: u64 = 0x10;
 const PORT_CMD: u64 = 0x18;
+const PORT_IE: u64 = 0x14;
 const PORT_TFD: u64 = 0x20;
 const PORT_SIG: u64 = 0x24;
 const PORT_SSTS: u64 = 0x28;
@@ -45,6 +48,7 @@ const ATA_FLUSH_CACHE_EXT: u8 = 0xEA;
 
 const WAIT_SPINS: usize = 2_000_000;
 
+#[derive(Clone, Copy)]
 struct Disk {
     port: u8,
     regs: u64,
@@ -107,6 +111,8 @@ impl Disk {
 
         fence(Ordering::SeqCst);
         self.set_reg(PORT_IS, 0xFFFF_FFFF);
+        IRQ_PORT.store(self.port, Ordering::Release);
+        IRQ_FLAG.store(false, Ordering::Release);
         self.set_reg(PORT_CI, 1);
         fence(Ordering::SeqCst);
 
@@ -116,7 +122,7 @@ impl Disk {
     fn wait_completion(&self, command: u8) -> Result<(), &'static str> {
         let mut completed = false;
         for _ in 0..WAIT_SPINS {
-            if self.reg(PORT_CI) & 1 == 0 {
+            if self.reg(PORT_CI) & 1 == 0 || IRQ_FLAG.load(Ordering::Acquire) {
                 completed = true;
                 break;
             }
@@ -126,6 +132,7 @@ impl Disk {
             }
             core::hint::spin_loop();
         }
+        IRQ_PORT.store(0xFF, Ordering::Release);
         if !completed {
             crate::error!(
                 "ahci: port {} command {:#x} timed out (is {:#x}, tfd {:#x})",
@@ -209,6 +216,46 @@ struct Controller {
 unsafe impl Send for Controller {}
 
 static CONTROLLER: IrqLock<Option<Controller>> = IrqLock::new(None);
+static ABAR: AtomicU64 = AtomicU64::new(0);
+static IRQ_FLAG: AtomicBool = AtomicBool::new(false);
+static IRQ_PORT: AtomicU8 = AtomicU8::new(0xFF);
+static IRQ_ACTIVE: AtomicBool = AtomicBool::new(false);
+static BUSY: [AtomicBool; 8] = [
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+];
+
+fn interrupt_handler() {
+    let abar = ABAR.load(Ordering::Relaxed);
+    if abar == 0 {
+        return;
+    }
+    let status = unsafe { ((abar + HBA_IS) as *const u32).read_volatile() };
+    if status == 0 {
+        return;
+    }
+    unsafe { ((abar + HBA_IS) as *mut u32).write_volatile(status) };
+    let active_port = IRQ_PORT.load(Ordering::Acquire);
+    for port in 0..32u32 {
+        if status & (1 << port) == 0 {
+            continue;
+        }
+        let regs = abar + 0x100 + port as u64 * 0x80;
+        let port_status = unsafe { ((regs + PORT_IS) as *const u32).read_volatile() };
+        if port_status != 0 {
+            unsafe { ((regs + PORT_IS) as *mut u32).write_volatile(port_status) };
+        }
+        if port as u8 == active_port {
+            IRQ_FLAG.store(true, Ordering::Release);
+        }
+    }
+}
 
 fn start_port(regs: u64, clb: u64, fis: u64) -> Result<(), &'static str> {
     let read = |offset: u64| unsafe { ((regs + offset) as *const u32).read_volatile() };
@@ -243,6 +290,11 @@ fn start_port(regs: u64, clb: u64, fis: u64) -> Result<(), &'static str> {
     let command = read(PORT_CMD) | CMD_FRE;
     write(PORT_CMD, command);
     write(PORT_CMD, command | CMD_ST);
+    // DMA setup, PIO setup, DMA completion, descriptor and task-file errors.
+    write(
+        PORT_IE,
+        (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5),
+    );
     Ok(())
 }
 
@@ -303,6 +355,26 @@ pub fn init() -> bool {
             return false;
         }
     };
+    ABAR.store(abar, Ordering::Relaxed);
+
+    // MSI completion interrupts. If the capability is absent, the command
+    // wait keeps its bounded CI polling fallback.
+    if crate::arch::apic::active() {
+        if let Some(vector) = crate::arch::idt::allocate_vector() {
+            if crate::arch::idt::register_dynamic(vector, interrupt_handler)
+                && pci::enable_msi(&device, vector)
+            {
+                IRQ_ACTIVE.store(true, Ordering::Relaxed);
+                unsafe {
+                    let ghc = ((abar + HBA_GHC) as *const u32).read_volatile();
+                    ((abar + HBA_GHC) as *mut u32).write_volatile(ghc | HBA_IE);
+                }
+                crate::info!("ahci: MSI completion interrupts on vector {}", vector);
+            } else {
+                crate::warn!("ahci: MSI unavailable, keeping polling completion");
+            }
+        }
+    }
 
     unsafe {
         let ghc = ((abar + HBA_GHC) as *const u32).read_volatile();
@@ -432,28 +504,58 @@ pub fn disk_info(index: usize) -> Option<(u8, u64, [u8; 40])> {
 }
 
 pub fn flush_disk(index: usize) -> Result<(), &'static str> {
-    let controller = CONTROLLER.lock();
-    let disk = controller
-        .as_ref()
-        .and_then(|controller| controller.disks.get(index))
-        .ok_or("no such disk")?;
-    disk.flush()
+    let disk = {
+        let controller = CONTROLLER.lock();
+        *controller
+            .as_ref()
+            .and_then(|controller| controller.disks.get(index))
+            .ok_or("no such disk")?
+    };
+    let Some(busy) = BUSY.get(index) else {
+        return Err("bad disk index");
+    };
+    if busy.swap(true, Ordering::AcqRel) {
+        return Err("AHCI busy");
+    }
+    let result = disk.flush();
+    busy.store(false, Ordering::Release);
+    result
 }
 
 pub fn read_sector(index: usize, lba: u64, out: &mut [u8; 512]) -> Result<(), &'static str> {
-    let controller = CONTROLLER.lock();
-    let disk = controller
-        .as_ref()
-        .and_then(|controller| controller.disks.get(index))
-        .ok_or("no such disk")?;
-    disk.read_sector(lba, out)
+    let disk = {
+        let controller = CONTROLLER.lock();
+        *controller
+            .as_ref()
+            .and_then(|controller| controller.disks.get(index))
+            .ok_or("no such disk")?
+    };
+    let Some(busy) = BUSY.get(index) else {
+        return Err("bad disk index");
+    };
+    if busy.swap(true, Ordering::AcqRel) {
+        return Err("AHCI busy");
+    }
+    let result = disk.read_sector(lba, out);
+    busy.store(false, Ordering::Release);
+    result
 }
 
 pub fn write_sector(index: usize, lba: u64, data: &[u8; 512]) -> Result<(), &'static str> {
-    let controller = CONTROLLER.lock();
-    let disk = controller
-        .as_ref()
-        .and_then(|controller| controller.disks.get(index))
-        .ok_or("no such disk")?;
-    disk.write_sector(lba, data)
+    let disk = {
+        let controller = CONTROLLER.lock();
+        *controller
+            .as_ref()
+            .and_then(|controller| controller.disks.get(index))
+            .ok_or("no such disk")?
+    };
+    let Some(busy) = BUSY.get(index) else {
+        return Err("bad disk index");
+    };
+    if busy.swap(true, Ordering::AcqRel) {
+        return Err("AHCI busy");
+    }
+    let result = disk.write_sector(lba, data);
+    busy.store(false, Ordering::Release);
+    result
 }

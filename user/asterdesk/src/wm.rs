@@ -1394,6 +1394,22 @@ impl WindowManager {
         }
     }
 
+    pub fn wheel(&mut self, x: i32, y: i32, delta: i32, theme: &Theme) -> bool {
+        let Some(id) = self.window_at(x, y) else {
+            return false;
+        };
+        let Some(window) = self.windows.iter_mut().find(|window| window.id == id) else {
+            return false;
+        };
+        let content = window.content();
+        let changed = window.app.wheel(delta, content);
+        if changed {
+            window.surface_valid = false;
+        }
+        let _ = theme;
+        changed
+    }
+
     pub fn mouse_up(&mut self, x: i32, y: i32, work_area: Rect) -> Option<(u64, i32)> {
         let mut desktop_move = None;
         if let Some(Interaction::Drag { id, .. }) = self.interaction {

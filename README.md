@@ -20,7 +20,7 @@ disk image). The current milestone is a **single-CPU developer preview**:
 | Boot | Aster Boot (own UEFI loader), GPT + FAT32 ESP, ELF kernel loading, custom page tables, `ExitBootServices`, higher-half handoff |
 | Kernel | GDT/TSS, IDT, 256 vectors, exceptions, ACPI fixed tables, Local APIC + IOAPIC ISA routing with PIC fallback, PIT at 1 kHz, 4-level paging, bitmap frame allocator, kernel heap (`alloc`), preemptive scheduler, ring-3 processes, syscalls via `int 0x80` (POWER 47) |
 | Memory | 4 KiB frames, 32 GiB addressable bitmap, per-process PML4, NX/W^X user mappings, heap self-tests, user copy validation |
-| Drivers | COM1 serial, UEFI GOP framebuffer, PS/2 keyboard + mouse (IRQ driven), PIT, PCI config, AHCI (q35, polling), Intel 82540EM (e1000, polling); ACPI S5/reset |
+| Drivers | COM1 serial, UEFI GOP framebuffer, PS/2 keyboard + IntelliMouse, PIT, PCI config, AHCI (q35, MSI completion), Intel 82540EM (e1000, IOAPIC INTx); ACPI S5/reset |
 | Filesystem | VFS + mount table; ramfs root for system files, FAT32 at `/home/user` with create/read/write/mkdir/rename/unlink |
 | Desktop | Aster Desktop in ring 3: light menu bar, Spotlight, Dock 2.0 (bottom/left/right, size, magnification, auto-hide), animated window manager, Window Overview (F3), Alt+Tab switcher, workspace slides, Control Centre and notifications |
 | Storage | Block registry with capacity/bounds/flush/counters, mount table, GPT + FAT32 at `/home/user`; v1 settings with backup; Settings reports device, filesystem, capacity, used/free and I/O |
@@ -39,8 +39,9 @@ by static screenshots. Known gaps are listed in
 [docs/FEATURES.md](docs/FEATURES.md), [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md)
 and [docs/releases/0.6.0/KNOWN_LIMITATIONS.md](docs/releases/0.6.0/KNOWN_LIMITATIONS.md).
 Networking is IPv4-only and still polls the e1000; MSI, interrupt-driven e1000/AHCI,
-USB, Device Manager, hardware inventory and PS/2 wheel are not implemented in this
-in-progress 0.6.0 branch. ACPI S5/reset and APIC/IOAPIC routing are real and tested.
+USB xHCI/HID is still not implemented and blocks the release tag. ACPI S5/reset,
+APIC/IOAPIC, the APIC timer, AHCI MSI, e1000 INTx, PS/2 wheel, Settings > Devices
+and the PCI inventory are real and tested.
 routing; there is no IPv6, TLS, inbound TCP listener or persistent static
 configuration yet. There is no audio, USB, AFS/journaling, SMP, GPU
 acceleration, full application sandboxing, package manager, installer, updater

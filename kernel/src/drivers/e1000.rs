@@ -2,12 +2,12 @@
 //!
 //! The reference machine exposes an e1000 NIC through QEMU user-mode
 //! networking. The driver uses MMIO, 32 RX descriptors and 8 TX descriptors in
-//! physical frames, and polls completion. Interrupts are disabled because the
-//! PIC has no routed PCI IRQ in this milestone; the network thread polls at a
-//! bounded rate instead.
+//! physical frames. RX/TX completion is interrupt-driven through MSI when the
+//! APIC and a PCI MSI capability are available; otherwise the network thread
+//! keeps a bounded polling fallback.
 
 use alloc::vec::Vec;
-use core::sync::atomic::{fence, AtomicBool, Ordering};
+use core::sync::atomic::{fence, AtomicBool, AtomicU64, Ordering};
 
 use crate::drivers::pci;
 use crate::mm::{pmm, vmm};
@@ -19,8 +19,16 @@ const DEVICE_ID: u16 = 0x100E;
 const REG_CTRL: u64 = 0x0000;
 const REG_STATUS: u64 = 0x0008;
 const REG_EERD: u64 = 0x0014;
+const REG_ICR: u64 = 0x00C0;
+const REG_IMS: u64 = 0x00D0;
 const REG_IMC: u64 = 0x00D8;
 const REG_RCTL: u64 = 0x0100;
+
+const IRQ_RXT0: u32 = 1 << 7;
+const IRQ_RXO: u32 = 1 << 6;
+const IRQ_TXDW: u32 = 1 << 0;
+const IRQ_LSC: u32 = 1 << 2;
+const IRQ_MASK: u32 = IRQ_RXT0 | IRQ_RXO | IRQ_TXDW | IRQ_LSC;
 const REG_TCTL: u64 = 0x0400;
 const REG_RDBAL: u64 = 0x2800;
 const REG_RDBAH: u64 = 0x2804;
@@ -70,6 +78,10 @@ unsafe impl Send for E1000 {}
 static NIC: IrqLock<Option<E1000>> = IrqLock::new(None);
 static FIRST_TX: AtomicBool = AtomicBool::new(false);
 static FIRST_RX: AtomicBool = AtomicBool::new(false);
+static IRQ_BAR: AtomicU64 = AtomicU64::new(0);
+static IRQ_ACTIVE: AtomicBool = AtomicBool::new(false);
+static RX_PENDING: AtomicBool = AtomicBool::new(false);
+static RX_SEEN: AtomicBool = AtomicBool::new(false);
 
 impl E1000 {
     fn read(&self, offset: u64) -> u32 {
@@ -239,6 +251,36 @@ pub fn init() -> bool {
     nic.write(REG_TDT, 0);
     nic.write(REG_TCTL, TCTL_EN | TCTL_PSP | TCTL_CT | TCTL_COLD);
 
+    // Prefer MSI, then PCI INTx through the IOAPIC, then polling.
+    IRQ_BAR.store(bar, Ordering::Relaxed);
+    let mut interrupt_route = None;
+    if crate::arch::apic::active() {
+        if let Some(vector) = crate::arch::idt::allocate_vector() {
+            if crate::arch::idt::register_dynamic(vector, interrupt_handler) {
+                if pci::enable_msi(&device, vector) {
+                    interrupt_route = Some(("MSI", vector));
+                } else {
+                    let line = pci::interrupt_line(&device);
+                    if line != 0 && line != 0xFF && crate::arch::apic::route_pci_line(line, vector)
+                    {
+                        interrupt_route = Some(("PCI INTx", vector));
+                    }
+                }
+            }
+        }
+    }
+    if let Some((path, vector)) = interrupt_route {
+        nic.write(REG_IMS, IRQ_MASK);
+        IRQ_ACTIVE.store(true, Ordering::Relaxed);
+        crate::info!(
+            "e1000: {} RX/TX interrupts enabled on vector {}",
+            path,
+            vector
+        );
+    } else {
+        crate::warn!("e1000: no interrupt route, keeping the polling fallback");
+    }
+
     nic.link_up = nic.read(REG_STATUS) & STATUS_LU != 0;
     crate::info!(
         "e1000: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}, link {} (ctrl {:#x}, status {:#x})",
@@ -259,6 +301,33 @@ pub fn init() -> bool {
 
 pub fn present() -> bool {
     NIC.lock().is_some()
+}
+
+pub fn interrupt_active() -> bool {
+    IRQ_ACTIVE.load(Ordering::Relaxed)
+}
+
+/// Drain the interrupt flag without touching the NIC lock.
+pub fn take_rx_interrupt() -> bool {
+    RX_PENDING.swap(false, Ordering::AcqRel)
+}
+
+fn interrupt_handler() {
+    let bar = IRQ_BAR.load(Ordering::Relaxed);
+    if bar == 0 {
+        return;
+    }
+    let causes = unsafe { ((bar + REG_ICR) as *const u32).read_volatile() };
+    if causes == 0 {
+        return;
+    }
+    unsafe { ((bar + REG_ICR) as *mut u32).write_volatile(causes) };
+    if causes & (IRQ_RXT0 | IRQ_RXO) != 0 {
+        RX_PENDING.store(true, Ordering::Release);
+        if !RX_SEEN.swap(true, Ordering::Relaxed) {
+            crate::info!("e1000: first RX interrupt (ICR {:#x})", causes);
+        }
+    }
 }
 
 pub fn mac() -> Option<[u8; 6]> {

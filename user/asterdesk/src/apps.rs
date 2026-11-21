@@ -320,6 +320,13 @@ impl App {
         }
     }
 
+    pub fn wheel(&mut self, delta: i32, content: Rect) -> bool {
+        match self {
+            App::Files(app) => app.wheel(delta, content),
+            _ => false,
+        }
+    }
+
     pub fn mouse(&mut self, x: i32, y: i32, content: Rect, theme: &Theme) -> Option<Action> {
         match self {
             App::Terminal(_) => None,
@@ -482,6 +489,7 @@ impl TerminalApp {
                     "  open <app>           launch an application",
                     "  echo <text>          print text",
                     "  clear                clear the screen",
+                    "  devices              list PCI functions",
                     "  shutdown             power off through ACPI",
                     "  reboot               restart through ACPI",
                     "  exit                 close the terminal",
@@ -1052,6 +1060,34 @@ impl TerminalApp {
 
             "clear" => self.lines.clear(),
 
+            "devices" => {
+                let mut list = [aster_abi::DeviceInfo::EMPTY; 32];
+                let count = sys::devices(&mut list);
+                if count == 0 {
+                    self.lines.push("no PCI functions reported".to_string());
+                }
+                for device in &list[..count.min(24)] {
+                    let line = format!(
+                        "{:02x}:{:02x}.{} {:04x}:{:04x} class {:02x}/{:02x} irq {} {}",
+                        device.bus,
+                        device.device,
+                        device.function,
+                        device.vendor,
+                        device.device_id,
+                        device.class,
+                        device.subclass,
+                        device.irq,
+                        if device.flags & 1 != 0 {
+                            "driver"
+                        } else {
+                            "unbound"
+                        }
+                    );
+                    sys::log(format!("pci: {}", line).as_bytes());
+                    self.lines.push(line);
+                }
+            }
+
             "shutdown" => sys::shutdown(),
 
             "reboot" => sys::restart(),
@@ -1375,6 +1411,18 @@ impl FilesApp {
 
         self.selected = 0;
         self.scroll = 0;
+    }
+
+    fn wheel(&mut self, delta: i32, content: Rect) -> bool {
+        let visible = (((content.h - 108) / 32).max(1)) as usize;
+        let maximum = self.entries.len().saturating_sub(visible);
+        let next = (self.scroll as i32 - delta).clamp(0, maximum as i32) as usize;
+        if next == self.scroll {
+            return false;
+        }
+        self.scroll = next;
+        sys::log(format!("files: wheel scroll {}", self.scroll).as_bytes());
+        true
     }
 
     fn sort_entries(&mut self) {
@@ -2374,7 +2422,7 @@ pub struct SettingsApp {
     renew_button: Rect,
 }
 
-const SECTIONS: [(&str, Icon); 11] = [
+const SECTIONS: [(&str, Icon); 12] = [
     ("Appearance", Icon::Palette),
     ("Display", Icon::Display),
     ("Sound", Icon::Sound),
@@ -2386,6 +2434,7 @@ const SECTIONS: [(&str, Icon); 11] = [
     ("Accessibility", Icon::Accessibility),
     ("Graphics & Motion", Icon::Display),
     ("About", Icon::Info),
+    ("Devices", Icon::Storage),
 ];
 
 impl SettingsApp {
@@ -2520,6 +2569,7 @@ impl SettingsApp {
             Color::rgb(0, 122, 255),
             Color::rgb(142, 142, 147),
             Color::rgb(90, 90, 96),
+            Color::rgb(142, 142, 147),
         ];
 
         let mut y = content.y + 12;
@@ -2955,6 +3005,49 @@ impl SettingsApp {
                 );
             }
 
+            11 => {
+                surface.draw_text(x, cy, "Devices", HEADLINE, palette.text);
+                cy += 34;
+                let mut list = [aster_abi::DeviceInfo::EMPTY; 32];
+                let count = sys::devices(&mut list);
+                surface.draw_text(
+                    x,
+                    cy,
+                    &format!("{} PCI function(s) on bus 0", count),
+                    CAPTION,
+                    palette.secondary,
+                );
+                cy += 26;
+                for device in &list[..count.min(18)] {
+                    let line = format!(
+                        "{:02x}:{:02x}.{}  {:04x}:{:04x}  class {:02x}/{:02x}  irq {}  {}",
+                        device.bus,
+                        device.device,
+                        device.function,
+                        device.vendor,
+                        device.device_id,
+                        device.class,
+                        device.subclass,
+                        device.irq,
+                        if device.flags & 1 != 0 {
+                            "driver"
+                        } else {
+                            "unbound"
+                        }
+                    );
+                    surface.draw_text(x, cy, &line, CAPTION, palette.text);
+                    cy += 18;
+                }
+                cy += 14;
+                surface.draw_text(
+                    x,
+                    cy,
+                    "USB xHCI: not implemented in this build",
+                    CAPTION,
+                    palette.secondary,
+                );
+            }
+
             _ => {
 
                 let logo_h = 92;
@@ -2999,11 +3092,11 @@ impl SettingsApp {
 
                 cy += logo_card.h + 18;
 
-                surface.draw_text(x, cy, "Aster OS 0.5.0", HEADLINE, palette.text);
+                surface.draw_text(x, cy, "Aster OS 0.6.0", HEADLINE, palette.text);
 
                 cy += 36;
 
-                self.info_row(surface, x, &mut cy, width, theme, "Kernel", "aster 0.5.0 (higher half, x86_64)");
+                self.info_row(surface, x, &mut cy, width, theme, "Kernel", "aster 0.6.0 (higher half, x86_64)");
 
                 self.info_row(surface, x, &mut cy, width, theme, "ABI", "Aster ABI 1");
 

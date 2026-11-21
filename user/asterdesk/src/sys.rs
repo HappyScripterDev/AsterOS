@@ -607,3 +607,26 @@ pub fn net_dns(name: &str, timeout_ms: u64) -> Result<[u8; 4], i64> {
         Ok(address)
     }
 }
+
+/// Enumerate PCI functions through the kernel device manager.
+pub fn devices(buffer: &mut [aster_abi::DeviceInfo]) -> usize {
+    if buffer.is_empty() {
+        return 0;
+    }
+    let result = unsafe {
+        syscall6(
+            sys::DEVICES,
+            buffer.as_mut_ptr() as u64,
+            buffer.len() as u64,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    if result < 0 {
+        0
+    } else {
+        result as usize
+    }
+}

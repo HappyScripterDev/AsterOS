@@ -372,14 +372,21 @@ pub fn start() {
 }
 
 extern "C" fn network_thread() {
+    let mut last_watchdog = 0u64;
     loop {
-        poll_hardware();
+        poll_hardware(&mut last_watchdog);
         run_timers();
         sched::sleep_ms(10);
     }
 }
 
-fn poll_hardware() {
+fn poll_hardware(last_watchdog: &mut u64) {
+    let now = crate::time::uptime_ms();
+    let interrupted = e1000::take_rx_interrupt();
+    if !interrupted && now.saturating_sub(*last_watchdog) < 1000 {
+        return;
+    }
+    *last_watchdog = now;
     let link = e1000::link_up();
     {
         let mut network = NET.lock();
@@ -705,7 +712,8 @@ pub fn poll_once() {
     if !NET.lock().present {
         return;
     }
-    poll_hardware();
+    let mut watchdog = 0u64;
+    poll_hardware(&mut watchdog);
     run_timers();
 }
 

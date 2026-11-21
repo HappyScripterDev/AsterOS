@@ -1467,6 +1467,16 @@ impl Desktop {
                 }
             }
 
+            k if k == InputKind::MouseWheel as u32 => {
+                if self
+                    .wm
+                    .wheel(self.mouse_x, self.mouse_y, event.value, &self.theme)
+                {
+                    let now = sys::time_ms();
+                    self.mark_window(self.mouse_x, self.mouse_y, now);
+                }
+            }
+
             k if k == InputKind::Key as u32 => {
                 if event.value == 1 {
                     self.key_press(event);

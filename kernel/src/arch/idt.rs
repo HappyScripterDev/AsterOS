@@ -10,7 +10,70 @@ use super::pic;
 pub const VECTOR_TIMER: u64 = 32;
 pub const VECTOR_KEYBOARD: u64 = 33;
 pub const VECTOR_MOUSE: u64 = 44;
+pub const VECTOR_APIC_TIMER: u64 = 63;
 pub const VECTOR_SYSCALL: u64 = 0x80;
+
+const VECTOR_FIRST_DYNAMIC: u64 = 48;
+const VECTOR_LAST_DYNAMIC: u64 = 63;
+const DYNAMIC_COUNT: usize = (VECTOR_LAST_DYNAMIC - VECTOR_FIRST_DYNAMIC) as usize;
+
+static DYNAMIC_HANDLERS: [core::sync::atomic::AtomicUsize; DYNAMIC_COUNT] =
+    [const { core::sync::atomic::AtomicUsize::new(0) }; DYNAMIC_COUNT];
+static DYNAMIC_CLAIMED: core::sync::atomic::AtomicU16 = core::sync::atomic::AtomicU16::new(0);
+static IRQ_COUNTS: [core::sync::atomic::AtomicU32; 64] =
+    [const { core::sync::atomic::AtomicU32::new(0) }; 64];
+
+/// Allocate a dynamic vector for a driver. Vector 63 is reserved for the APIC
+/// timer, so MSI can use 48..=62. The caller must register a handler and must
+/// free the vector when the device is removed.
+pub fn allocate_vector() -> Option<u8> {
+    use core::sync::atomic::Ordering;
+    for index in 0..DYNAMIC_COUNT - 1 {
+        let bit = 1u16 << index;
+        loop {
+            let current = DYNAMIC_CLAIMED.load(Ordering::Acquire);
+            if current & bit != 0 {
+                break;
+            }
+            if DYNAMIC_CLAIMED
+                .compare_exchange(current, current | bit, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                return Some((VECTOR_FIRST_DYNAMIC + index as u64) as u8);
+            }
+        }
+    }
+    None
+}
+
+pub fn free_vector(vector: u8) {
+    use core::sync::atomic::Ordering;
+    if (VECTOR_FIRST_DYNAMIC..=VECTOR_LAST_DYNAMIC).contains(&(vector as u64)) {
+        let bit = 1u16 << (vector as u64 - VECTOR_FIRST_DYNAMIC);
+        DYNAMIC_CLAIMED.fetch_and(!bit, Ordering::AcqRel);
+        DYNAMIC_HANDLERS[(vector as u64 - VECTOR_FIRST_DYNAMIC) as usize]
+            .store(0, Ordering::Release);
+    }
+}
+
+pub fn register_dynamic(vector: u8, handler: fn()) -> bool {
+    use core::sync::atomic::Ordering;
+    if !(VECTOR_FIRST_DYNAMIC..VECTOR_LAST_DYNAMIC).contains(&(vector as u64)) {
+        return false;
+    }
+    let slot = (vector as u64 - VECTOR_FIRST_DYNAMIC) as usize;
+    DYNAMIC_HANDLERS[slot].store(handler as usize, Ordering::Release);
+    true
+}
+
+pub fn irq_counts() -> [u32; 64] {
+    use core::sync::atomic::Ordering;
+    let mut counts = [0u32; 64];
+    for (index, counter) in IRQ_COUNTS.iter().enumerate() {
+        counts[index] = counter.load(Ordering::Relaxed);
+    }
+    counts
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -116,7 +179,10 @@ isr_table! {
     32 => isr32, 33 => isr33, 34 => isr34, 35 => isr35, 36 => isr36,
     37 => isr37, 38 => isr38, 39 => isr39, 40 => isr40, 41 => isr41,
     42 => isr42, 43 => isr43, 44 => isr44, 45 => isr45, 46 => isr46,
-    47 => isr47,
+    47 => isr47, 48 => isr48, 49 => isr49, 50 => isr50, 51 => isr51,
+    52 => isr52, 53 => isr53, 54 => isr54, 55 => isr55, 56 => isr56,
+    57 => isr57, 58 => isr58, 59 => isr59, 60 => isr60, 61 => isr61,
+    62 => isr62, 63 => isr63,
 }
 
 global_asm!(
@@ -185,6 +251,22 @@ global_asm!(
     ISR_NOERR 45
     ISR_NOERR 46
     ISR_NOERR 47
+    ISR_NOERR 48
+    ISR_NOERR 49
+    ISR_NOERR 50
+    ISR_NOERR 51
+    ISR_NOERR 52
+    ISR_NOERR 53
+    ISR_NOERR 54
+    ISR_NOERR 55
+    ISR_NOERR 56
+    ISR_NOERR 57
+    ISR_NOERR 58
+    ISR_NOERR 59
+    ISR_NOERR 60
+    ISR_NOERR 61
+    ISR_NOERR 62
+    ISR_NOERR 63
 
     .global isr128
     isr128:
@@ -242,6 +324,29 @@ extern "C" fn isr_dispatch(frame: *mut InterruptFrame) {
     }
     if vector == VECTOR_SYSCALL {
         crate::syscall::handle(unsafe { &mut *frame });
+        return;
+    }
+    if vector == VECTOR_APIC_TIMER {
+        use core::sync::atomic::Ordering;
+        IRQ_COUNTS[vector as usize].fetch_add(1, Ordering::Relaxed);
+        crate::time::tick();
+        crate::arch::apic::note_apic_timer();
+        crate::arch::apic::eoi();
+        crate::sched::timer_tick(frame);
+        return;
+    }
+    if (VECTOR_FIRST_DYNAMIC..VECTOR_LAST_DYNAMIC).contains(&vector) {
+        use core::sync::atomic::Ordering;
+        IRQ_COUNTS[vector as usize].fetch_add(1, Ordering::Relaxed);
+        let handler =
+            DYNAMIC_HANDLERS[(vector - VECTOR_FIRST_DYNAMIC) as usize].load(Ordering::Acquire);
+        if handler != 0 {
+            let handler: fn() = unsafe { core::mem::transmute(handler) };
+            handler();
+        }
+        if crate::arch::apic::active() {
+            crate::arch::apic::eoi();
+        }
         return;
     }
     match vector {
