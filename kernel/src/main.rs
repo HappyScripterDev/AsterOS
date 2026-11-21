@@ -39,7 +39,7 @@ mod syscall;
 mod time;
 mod user;
 
-pub const VERSION: &str = "0.4.0 (networking)";
+pub const VERSION: &str = "0.5.0 (graphics and motion)";
 
 global_asm!(
     r#"

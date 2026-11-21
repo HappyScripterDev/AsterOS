@@ -19,6 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from build import find_cargo  # noqa: E402
 from run import Qmp, DATA_IMAGE, drive_args, find_ovmf, find_qemu  # noqa: E402
 
 MARKERS = [
@@ -109,11 +110,13 @@ def main() -> None:
     args = parser.parse_args()
 
     run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"])
+    run([find_cargo(), "test", "-p", "aster-motion", "--quiet"])
     if not args.skip_build:
         run([sys.executable, "tools/build.py"])
     boot_smoke()
     if args.ui:
         run([sys.executable, "tools/ui_test.py"])
+        run([sys.executable, "tools/graphics_test.py"])
     print("ALL TESTS PASSED")
 
 

@@ -145,6 +145,40 @@ pub struct Theme {
     pub wallpaper: usize,
 
     pub brightness: f32,
+
+    /// `render::QualityMode` code (0 Quality, 1 Balanced, 2 Performance, 3 Adaptive).
+    pub quality: u8,
+
+    pub shadows: bool,
+
+    pub transparency: bool,
+
+    pub blur: bool,
+
+    pub window_animations: bool,
+
+    pub dock_animations: bool,
+
+    pub workspace_animations: bool,
+
+    pub ui_animations: bool,
+
+    pub smooth_scrolling: bool,
+
+    /// 0 bottom, 1 left, 2 right.
+    pub dock_position: u8,
+
+    pub dock_size: f32,
+
+    pub dock_magnification: f32,
+
+    pub dock_autohide: bool,
+
+    pub dock_indicators: bool,
+
+    pub frame_limit: u16,
+
+    pub ui_scale: f32,
 }
 
 impl Theme {
@@ -178,6 +212,38 @@ impl Theme {
         }
     }
 
+    pub fn window_motion(&self, base_ms: f32) -> f32 {
+        if !self.window_animations {
+            0.0
+        } else {
+            self.motion(base_ms)
+        }
+    }
+
+    pub fn dock_motion(&self, base_ms: f32) -> f32 {
+        if !self.dock_animations {
+            0.0
+        } else {
+            self.motion(base_ms)
+        }
+    }
+
+    pub fn workspace_motion(&self, base_ms: f32) -> f32 {
+        if !self.workspace_animations {
+            0.0
+        } else {
+            self.motion(base_ms)
+        }
+    }
+
+    pub fn ui_motion(&self, base_ms: f32) -> f32 {
+        if !self.ui_animations {
+            0.0
+        } else {
+            self.motion(base_ms)
+        }
+    }
+
     pub fn text_on_accent(&self) -> Color {
         match self.accent().name {
             "Yellow" | "Green" => Color::rgb(0x1D, 0x1D, 0x1F),
@@ -199,6 +265,38 @@ impl Default for Theme {
             wallpaper: 0,
 
             brightness: 1.0,
+
+            quality: 1,
+
+            shadows: true,
+
+            transparency: true,
+
+            blur: true,
+
+            window_animations: true,
+
+            dock_animations: true,
+
+            workspace_animations: true,
+
+            ui_animations: true,
+
+            smooth_scrolling: true,
+
+            dock_position: 0,
+
+            dock_size: 1.0,
+
+            dock_magnification: 0.45,
+
+            dock_autohide: false,
+
+            dock_indicators: true,
+
+            frame_limit: 60,
+
+            ui_scale: 1.0,
         }
     }
 }

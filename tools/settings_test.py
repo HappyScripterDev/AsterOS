@@ -19,6 +19,7 @@ OUT = ROOT / "build" / "settingsprobe"
 DEFAULT = (
     b"version=1\naccent=blue\nanimations=1.00\n"
     b"wallpaper=0\nreduce_motion=0\nbrightness=1.00\n"
+    b"gfx=1,1,1,1,60,1.00\nmotion=1,1,1,1,1\ndock=0,1.00,0.45,0,1\n"
 )
 
 

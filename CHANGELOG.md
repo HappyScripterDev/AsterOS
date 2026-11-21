@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.5.0 - Graphics and motion (2026-11-21)
+
+- Added the `aster-motion` crate: easing curves, tweens, springs, motion tracks,
+  sequences and host unit tests.
+- Added dirty-region compositing with bounded merging, partial wallpaper
+  restore, partial framebuffer present and idle frame skipping.
+- Added measured frame timing, FPS, draw/present time, dirty pixels, redraws and
+  skipped frames; Monitor now shows real software-renderer telemetry.
+- Added Quality/Balanced/Performance/Adaptive modes that change shadow quality
+  and dirty-region limits; Adaptive reacts to measured frame time.
+- Replaced timestamp effects with an explicit window state machine and
+  time-based open/close/minimize-to-dock/restore/maximize/snap/focus
+  transitions, including real opacity fading.
+- Added Dock 2.0: bottom/left/right positions, size, magnification, auto-hide,
+  running and minimized indicators.
+- Added workspace slide transitions and indicators, Window Overview with real
+  captured previews, and a held-Alt quick switcher.
+- Added Text editor tabs with create/select/close, keyboard shortcuts and
+  preserved per-tab state.
+- Added menu open/close fade, toast slide/fade, reduced-motion handling and
+  effect switches for shadows, transparency and wallpaper blur.
+- Added Settings > Graphics & Motion with real, persisted controls and a live
+  motion preview.
+- Added `tools/graphics_test.py` with pixel-level assertions for minimize/
+  restore, overview dimming, switcher visibility, workspace switching, tabs and
+  settings persistence.
+- Version strings updated to 0.5.0.
+
 ## 0.4.0 - Networking (2026-11-21)
 
 - Added a real Intel 82540EM (e1000) driver: PCI discovery, MMIO BAR, EEPROM

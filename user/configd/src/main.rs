@@ -225,7 +225,7 @@ pub extern "C" fn service_main() -> ! {
     }
 
     if length == 0 {
-        let defaults = b"version=1\naccent=blue\nanimations=1.00\nwallpaper=0\nreduce_motion=0\nbrightness=1.00\n";
+        let defaults = b"version=1\naccent=blue\nanimations=1.00\nwallpaper=0\nreduce_motion=0\nbrightness=1.00\ngfx=1,1,1,1,60,1.00\nmotion=1,1,1,1,1\ndock=0,1.00,0.45,0,1\n";
         if save(defaults) {
             settings[..defaults.len()].copy_from_slice(defaults);
             length = defaults.len();
@@ -261,7 +261,7 @@ pub extern "C" fn service_main() -> ! {
             let reply = if length > 0 {
                 &settings[..length]
             } else {
-                b"version=1\naccent=blue\nanimations=1.00\nwallpaper=0\nreduce_motion=0\nbrightness=1.00\n"
+                b"version=1\naccent=blue\nanimations=1.00\nwallpaper=0\nreduce_motion=0\nbrightness=1.00\ngfx=1,1,1,1,60,1.00\nmotion=1,1,1,1,1\ndock=0,1.00,0.45,0,1\n"
             };
             if !send(reply) {
                 unsafe { syscall(SYS_EXIT, 2, 0, 0) };

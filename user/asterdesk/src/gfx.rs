@@ -59,8 +59,30 @@ impl Rect {
         self.w <= 0 || self.h <= 0
     }
 
+    pub fn area(&self) -> i32 {
+        if self.is_empty() {
+            0
+        } else {
+            self.w * self.h
+        }
+    }
+
     pub fn offset(&self, dx: i32, dy: i32) -> Rect {
         Rect::new(self.x + dx, self.y + dy, self.w, self.h)
+    }
+
+    pub fn union(&self, other: Rect) -> Rect {
+        if self.is_empty() {
+            return other;
+        }
+        if other.is_empty() {
+            return *self;
+        }
+        let x = self.x.min(other.x);
+        let y = self.y.min(other.y);
+        let right = self.right().max(other.right());
+        let bottom = self.bottom().max(other.bottom());
+        Rect::new(x, y, right - x, bottom - y)
     }
 }
 
@@ -150,6 +172,9 @@ pub struct Surface {
     pub pixels: *mut u32,
     pub clip: Rect,
     pub format: u32,
+    /// Global alpha multiplier in 0..=255. Window transitions use this to fade
+    /// real rendered content instead of drawing a fake translucent rectangle.
+    pub opacity: u8,
 }
 
 impl Surface {
@@ -162,6 +187,7 @@ impl Surface {
             pixels: address as *mut u32,
             clip: Rect::new(0, 0, width, height),
             format,
+            opacity: 255,
         })
     }
 
@@ -194,11 +220,25 @@ impl Surface {
         if !self.clip.contains(x, y) {
             return;
         }
+        if self.opacity == 0 || color.alpha() == 0 {
+            return;
+        }
+        let color = if self.opacity == 255 {
+            color
+        } else {
+            color.scale_alpha(self.opacity as f32 / 255.0)
+        };
         let index = (y * self.width + x) as usize;
         unsafe {
             let pixel = self.pixels.add(index);
             *pixel = blend(*pixel, color);
         }
+    }
+
+    pub fn set_opacity(&mut self, opacity: u8) -> u8 {
+        let previous = self.opacity;
+        self.opacity = opacity;
+        previous
     }
 
     pub fn clear(&mut self, color: Color) {
@@ -216,7 +256,7 @@ impl Surface {
         if rect.is_empty() {
             return;
         }
-        if color.alpha() == 255 {
+        if color.alpha() == 255 && self.opacity == 255 {
             let value = color.0 & 0x00FF_FFFF;
             for y in rect.y..rect.bottom() {
                 let start = (y * self.width + rect.x) as usize;
@@ -643,14 +683,32 @@ impl Surface {
     }
 
     pub fn present(&self, framebuffer: *mut u32, fb_stride: u32, format: u32) {
-        let count = self.width as usize * self.height as usize;
+        self.present_region(
+            framebuffer,
+            fb_stride,
+            format,
+            Rect::new(0, 0, self.width, self.height),
+        );
+    }
+
+    /// Copy one rectangle of the backbuffer to the framebuffer. Used by the
+    /// dirty-region compositor so an idle clock tick does not push 4 MiB.
+    pub fn present_region(&self, framebuffer: *mut u32, fb_stride: u32, format: u32, rect: Rect) {
+        let rect = rect.intersect(Rect::new(0, 0, self.width, self.height));
+        if rect.is_empty() {
+            return;
+        }
         unsafe {
             if format == 1 {
-                core::ptr::copy_nonoverlapping(self.pixels, framebuffer, count);
+                for y in rect.y..rect.bottom() {
+                    let source = self.pixels.add((y * self.width + rect.x) as usize);
+                    let target = framebuffer.add((y as u32 * fb_stride) as usize + rect.x as usize);
+                    core::ptr::copy_nonoverlapping(source, target, rect.w as usize);
+                }
             } else {
-                for y in 0..self.height {
+                for y in rect.y..rect.bottom() {
                     let row = (y as u32 * fb_stride) as usize;
-                    for x in 0..self.width {
+                    for x in rect.x..rect.right() {
                         let c = *self.pixels.add((y * self.width + x) as usize);
                         let b = c & 0xFF;
                         let g = (c >> 8) & 0xFF;
@@ -660,6 +718,22 @@ impl Surface {
                 }
             }
         }
+    }
+
+    /// Copy a rectangle out of the backbuffer, for window previews.
+    pub fn copy_region(&self, rect: Rect) -> Option<(Vec<u32>, i32, i32)> {
+        let rect = rect.intersect(Rect::new(0, 0, self.width, self.height));
+        if rect.is_empty() {
+            return None;
+        }
+        let mut pixels = vec![0u32; (rect.w * rect.h) as usize];
+        for y in 0..rect.h {
+            for x in 0..rect.w {
+                pixels[(y * rect.w + x) as usize] =
+                    self.pixel(rect.x + x, rect.y + y) | 0xFF00_0000;
+            }
+        }
+        Some((pixels, rect.w, rect.h))
     }
 
     pub fn fill_rounded_gradient(&mut self, rect: Rect, radius: i32, top: Color, bottom: Color) {
@@ -857,7 +931,13 @@ pub fn upscale_bilinear(
     width: i32,
     height: i32,
 ) {
-    if source_width <= 0 || source_height <= 0 {
+    if source_width <= 0
+        || source_height <= 0
+        || width <= 0
+        || height <= 0
+        || source.len() < (source_width * source_height) as usize
+        || destination.len() < (width * height) as usize
+    {
         return;
     }
     for y in 0..height {

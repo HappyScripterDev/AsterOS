@@ -23,6 +23,22 @@ pub struct Settings {
     pub wallpaper: usize,
     pub reduce_motion: bool,
     pub brightness: f32,
+    pub quality: u8,
+    pub shadows: bool,
+    pub transparency: bool,
+    pub blur: bool,
+    pub window_animations: bool,
+    pub dock_animations: bool,
+    pub workspace_animations: bool,
+    pub ui_animations: bool,
+    pub smooth_scrolling: bool,
+    pub dock_position: u8,
+    pub dock_size: f32,
+    pub dock_magnification: f32,
+    pub dock_autohide: bool,
+    pub dock_indicators: bool,
+    pub frame_limit: u16,
+    pub ui_scale: f32,
 }
 
 impl Default for Settings {
@@ -33,6 +49,22 @@ impl Default for Settings {
             wallpaper: 0,
             reduce_motion: false,
             brightness: 1.0,
+            quality: 1,
+            shadows: true,
+            transparency: true,
+            blur: true,
+            window_animations: true,
+            dock_animations: true,
+            workspace_animations: true,
+            ui_animations: true,
+            smooth_scrolling: true,
+            dock_position: 0,
+            dock_size: 1.0,
+            dock_magnification: 0.45,
+            dock_autohide: false,
+            dock_indicators: true,
+            frame_limit: 60,
+            ui_scale: 1.0,
         }
     }
 }
@@ -53,6 +85,22 @@ impl Settings {
                 .min(theme::WALLPAPER_COUNT.saturating_sub(1)),
             reduce_motion: theme.reduce_motion,
             brightness: theme.brightness.clamp(0.3, 1.0),
+            quality: theme.quality.min(3),
+            shadows: theme.shadows,
+            transparency: theme.transparency,
+            blur: theme.blur,
+            window_animations: theme.window_animations,
+            dock_animations: theme.dock_animations,
+            workspace_animations: theme.workspace_animations,
+            ui_animations: theme.ui_animations,
+            smooth_scrolling: theme.smooth_scrolling,
+            dock_position: theme.dock_position.min(2),
+            dock_size: theme.dock_size.clamp(0.7, 1.3),
+            dock_magnification: theme.dock_magnification.clamp(0.0, 1.0),
+            dock_autohide: theme.dock_autohide,
+            dock_indicators: theme.dock_indicators,
+            frame_limit: theme.frame_limit,
+            ui_scale: theme.ui_scale.clamp(1.0, 1.5),
         }
     }
 
@@ -62,6 +110,22 @@ impl Settings {
         theme.wallpaper = self.wallpaper.min(theme::WALLPAPER_COUNT.saturating_sub(1));
         theme.reduce_motion = self.reduce_motion;
         theme.brightness = self.brightness.clamp(0.3, 1.0);
+        theme.quality = self.quality.min(3);
+        theme.shadows = self.shadows;
+        theme.transparency = self.transparency;
+        theme.blur = self.blur;
+        theme.window_animations = self.window_animations;
+        theme.dock_animations = self.dock_animations;
+        theme.workspace_animations = self.workspace_animations;
+        theme.ui_animations = self.ui_animations;
+        theme.smooth_scrolling = self.smooth_scrolling;
+        theme.dock_position = self.dock_position.min(2);
+        theme.dock_size = self.dock_size.clamp(0.7, 1.3);
+        theme.dock_magnification = self.dock_magnification.clamp(0.0, 1.0);
+        theme.dock_autohide = self.dock_autohide;
+        theme.dock_indicators = self.dock_indicators;
+        theme.frame_limit = self.frame_limit;
+        theme.ui_scale = self.ui_scale.clamp(1.0, 1.5);
     }
 
     pub fn serialize(&self) -> String {
@@ -75,6 +139,24 @@ impl Settings {
             self.wallpaper.min(theme::WALLPAPER_COUNT.saturating_sub(1)),
             if self.reduce_motion { 1 } else { 0 },
             self.brightness.clamp(0.3, 1.0),
+        ) + &format!(
+            "gfx={},{},{},{},{},{:.2}\nmotion={},{},{},{},{}\ndock={},{:.2},{:.2},{},{}\n",
+            self.quality.min(3),
+            if self.shadows { 1 } else { 0 },
+            if self.transparency { 1 } else { 0 },
+            if self.blur { 1 } else { 0 },
+            self.frame_limit,
+            self.ui_scale.clamp(1.0, 1.5),
+            if self.window_animations { 1 } else { 0 },
+            if self.dock_animations { 1 } else { 0 },
+            if self.workspace_animations { 1 } else { 0 },
+            if self.ui_animations { 1 } else { 0 },
+            if self.smooth_scrolling { 1 } else { 0 },
+            self.dock_position.min(2),
+            self.dock_size.clamp(0.7, 1.3),
+            self.dock_magnification.clamp(0.0, 1.0),
+            if self.dock_autohide { 1 } else { 0 },
+            if self.dock_indicators { 1 } else { 0 },
         )
     }
 }
@@ -142,6 +224,76 @@ pub fn parse(text: &str) -> Loaded {
                         settings.brightness = brightness
                     }
                     _ => needs_save = true,
+                }
+            }
+            "gfx" => {
+                recognised += 1;
+                let parts: alloc::vec::Vec<&str> = value.split(',').collect();
+                if parts.len() == 6 {
+                    if let (Ok(quality), Ok(frame), Ok(scale)) = (
+                        parts[0].parse::<u8>(),
+                        parts[4].parse::<u16>(),
+                        parts[5].parse::<f32>(),
+                    ) {
+                        if quality <= 3
+                            && matches!(frame, 0 | 30 | 60 | 120)
+                            && (1.0..=1.5).contains(&scale)
+                        {
+                            settings.quality = quality;
+                            settings.shadows = parts[1] == "1";
+                            settings.transparency = parts[2] == "1";
+                            settings.blur = parts[3] == "1";
+                            settings.frame_limit = frame;
+                            settings.ui_scale = scale;
+                        } else {
+                            needs_save = true;
+                        }
+                    } else {
+                        needs_save = true;
+                    }
+                } else {
+                    needs_save = true;
+                }
+            }
+            "motion" => {
+                recognised += 1;
+                let parts: alloc::vec::Vec<&str> = value.split(',').collect();
+                if parts.len() == 5 {
+                    settings.window_animations = parts[0] == "1";
+                    settings.dock_animations = parts[1] == "1";
+                    settings.workspace_animations = parts[2] == "1";
+                    settings.ui_animations = parts[3] == "1";
+                    settings.smooth_scrolling = parts[4] == "1";
+                } else {
+                    needs_save = true;
+                }
+            }
+            "dock" => {
+                recognised += 1;
+                let parts: alloc::vec::Vec<&str> = value.split(',').collect();
+                if parts.len() == 5 {
+                    if let (Ok(position), Ok(size), Ok(magnification)) = (
+                        parts[0].parse::<u8>(),
+                        parts[1].parse::<f32>(),
+                        parts[2].parse::<f32>(),
+                    ) {
+                        if position <= 2
+                            && (0.7..=1.3).contains(&size)
+                            && (0.0..=1.0).contains(&magnification)
+                        {
+                            settings.dock_position = position;
+                            settings.dock_size = size;
+                            settings.dock_magnification = magnification;
+                            settings.dock_autohide = parts[3] == "1";
+                            settings.dock_indicators = parts[4] == "1";
+                        } else {
+                            needs_save = true;
+                        }
+                    } else {
+                        needs_save = true;
+                    }
+                } else {
+                    needs_save = true;
                 }
             }
             _ => {}

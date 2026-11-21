@@ -193,4 +193,6 @@ logs, and a permission model beyond the single-user assumption. See
 - No demand paging, swapping, or copy-on-write; user memory is eagerly mapped.
 - No kernel preemption of arbitrary kernel threads.
 - User binaries must be x86_64 ELF with a fixed base; no dynamic linking.
-- Desktop rendering is software-only and runs at roughly 18 fps under QEMU TCG.
+- Desktop rendering is software-only. It uses dirty-region repaint and partial
+  present; current measured frame time is ~16.8 ms at 60 fps on QEMU TCG for the
+  idle desktop, with idle frames skipped.

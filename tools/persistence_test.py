@@ -27,6 +27,7 @@ PAYLOAD = "hello-from-first-boot"
 SETTINGS_AFTER = (
     b"version=1\naccent=green\nanimations=1.00\n"
     b"wallpaper=0\nreduce_motion=0\nbrightness=1.00\n"
+    b"gfx=1,1,1,1,60,1.00\nmotion=1,1,1,1,1\ndock=0,1.00,0.45,0,1\n"
 )
 
 

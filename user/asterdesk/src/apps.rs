@@ -145,6 +145,18 @@ pub enum Action {
     SavePreferences,
 
     RestartServices,
+
+    SetQuality(u8),
+
+    SetGraphicsFlag(u8, bool),
+
+    SetDockPosition(u8),
+
+    SetDockSize(f32),
+
+    SetDockMagnification(f32),
+
+    SetFrameLimit(u16),
 }
 
 pub enum App {
@@ -393,7 +405,7 @@ impl TerminalApp {
     fn new() -> Self {
         let mut lines = Vec::new();
 
-        lines.push("Aster Terminal 0.4.0".to_string());
+        lines.push("Aster Terminal 0.5.0".to_string());
 
         lines.push("Type `help` for the command list.".to_string());
 
@@ -554,7 +566,7 @@ impl TerminalApp {
 
             "uname" => self
                 .lines
-                .push("Aster OS 0.4.0 x86_64 (aster kernel)".to_string()),
+                .push("Aster OS 0.5.0 x86_64 (aster kernel)".to_string()),
 
             "date" => match sys::rtc() {
                 Some(t) => self.lines.push(format!(
@@ -2356,7 +2368,7 @@ pub struct SettingsApp {
     renew_button: Rect,
 }
 
-const SECTIONS: [(&str, Icon); 10] = [
+const SECTIONS: [(&str, Icon); 11] = [
     ("Appearance", Icon::Palette),
     ("Display", Icon::Display),
     ("Sound", Icon::Sound),
@@ -2366,6 +2378,7 @@ const SECTIONS: [(&str, Icon); 10] = [
     ("Security", Icon::Shield),
     ("Storage", Icon::Storage),
     ("Accessibility", Icon::Accessibility),
+    ("Graphics & Motion", Icon::Display),
     ("About", Icon::Info),
 ];
 
@@ -2477,6 +2490,7 @@ impl SettingsApp {
 
     pub fn set_section(&mut self, section: usize) {
         self.section = section.min(SECTIONS.len() - 1);
+        sys::log(format!("settings: section {}", self.section).as_bytes());
     }
 
     fn draw(&mut self, surface: &mut Surface, content: Rect, theme: &Theme) {
@@ -2499,6 +2513,7 @@ impl SettingsApp {
             Color::rgb(142, 142, 147),
             Color::rgb(0, 122, 255),
             Color::rgb(142, 142, 147),
+            Color::rgb(90, 90, 96),
         ];
 
         let mut y = content.y + 12;
@@ -2806,6 +2821,134 @@ impl SettingsApp {
 
             }
 
+            9 => {
+                let top = cy;
+                surface.draw_text(x, top, "Performance mode", BODY_MEDIUM, palette.text);
+                for (index, mode) in ["Quality", "Balanced", "Performance", "Adaptive"].iter().enumerate() {
+                    let rect = Rect::new(x + index as i32 * 88, top + 16, 82, 26);
+                    ui::draw_button(
+                        surface,
+                        rect,
+                        mode,
+                        index as u8 == theme.quality,
+                        theme,
+                        false,
+                        true,
+                    );
+                }
+
+                let slider = |surface: &mut Surface, y: i32, label: &str, value: f32, value_text: &str| {
+                    surface.draw_text(x, y, label, BODY, palette.secondary);
+                    surface.draw_text(x + width - 64, y, value_text, CAPTION, palette.tertiary);
+                    ui::draw_slider(surface, Rect::new(x, y + 16, width, 18), value.clamp(0.0, 1.0), theme);
+                };
+                slider(
+                    surface,
+                    top + 50,
+                    "Animation speed",
+                    (theme.animation_speed - 0.25) / 1.75,
+                    &format!("{:.2}x", theme.animation_speed),
+                );
+                slider(
+                    surface,
+                    top + 92,
+                    "Dock size",
+                    (theme.dock_size - 0.7) / 0.6,
+                    &format!("{:.0}%", theme.dock_size * 100.0),
+                );
+                slider(
+                    surface,
+                    top + 134,
+                    "Dock magnification",
+                    theme.dock_magnification,
+                    &format!("{:.0}%", theme.dock_magnification * 100.0),
+                );
+
+                surface.draw_text(x, top + 178, "Frame limit", BODY, palette.secondary);
+                for (index, (label, limit)) in
+                    [("30", 30u16), ("60", 60), ("120", 120), ("Free", 0)].iter().enumerate()
+                {
+                    let rect = Rect::new(x + index as i32 * 64, top + 196, 58, 24);
+                    ui::draw_button(
+                        surface,
+                        rect,
+                        label,
+                        theme.frame_limit == *limit,
+                        theme,
+                        false,
+                        true,
+                    );
+                }
+
+                surface.draw_text(x, top + 232, "Dock position", BODY, palette.secondary);
+                for (index, label) in ["Bottom", "Left", "Right"].iter().enumerate() {
+                    let rect = Rect::new(x + index as i32 * 78, top + 250, 72, 24);
+                    ui::draw_button(
+                        surface,
+                        rect,
+                        label,
+                        theme.dock_position == index as u8,
+                        theme,
+                        false,
+                        true,
+                    );
+                }
+
+                let flags = [
+                    ("Window animations", theme.window_animations),
+                    ("Dock animations", theme.dock_animations),
+                    ("Workspace animations", theme.workspace_animations),
+                    ("UI animations", theme.ui_animations),
+                    ("Smooth scrolling", theme.smooth_scrolling),
+                    ("Shadows", theme.shadows),
+                    ("Transparency", theme.transparency),
+                    ("Blur", theme.blur),
+                    ("Dock indicators", theme.dock_indicators),
+                    ("Dock auto-hide", theme.dock_autohide),
+                ];
+                let column = width / 2;
+                for (index, (label, value)) in flags.iter().enumerate() {
+                    let col = index % 2;
+                    let row = index / 2;
+                    let tx = x + col as i32 * column;
+                    let ty = top + 286 + row as i32 * 24;
+                    surface.draw_text(tx, ty, label, CAPTION, palette.text);
+                    ui::draw_toggle(
+                        surface,
+                        Rect::new(tx + column - 42, ty - 3, 36, 20),
+                        *value,
+                        theme,
+                    );
+                }
+
+                let preview = Rect::new(x, top + 416, width, 58);
+                surface.fill_rounded(preview, 10, palette.elevated);
+                let progress = if theme.reduce_motion || !theme.window_animations {
+                    1.0
+                } else {
+                    let period = (sys::time_ms() % 1800) as f32 / 1800.0;
+                    if period < 0.5 {
+                        period * 2.0
+                    } else {
+                        (1.0 - period) * 2.0
+                    }
+                };
+                let mini_w = 96;
+                let mini_x = preview.x + 12 + ((preview.w - mini_w - 24) as f32 * progress) as i32;
+                surface.fill_rounded(
+                    Rect::new(mini_x, preview.y + 8, mini_w, 26),
+                    6,
+                    theme.accent_color().with_alpha(90),
+                );
+                surface.draw_text(
+                    preview.x + 12,
+                    preview.y + 40,
+                    "Live motion preview - window, dock and UI settings apply immediately",
+                    CAPTION,
+                    palette.secondary,
+                );
+            }
+
             _ => {
 
                 let logo_h = 92;
@@ -2850,11 +2993,11 @@ impl SettingsApp {
 
                 cy += logo_card.h + 18;
 
-                surface.draw_text(x, cy, "Aster OS 0.4.0", HEADLINE, palette.text);
+                surface.draw_text(x, cy, "Aster OS 0.5.0", HEADLINE, palette.text);
 
                 cy += 36;
 
-                self.info_row(surface, x, &mut cy, width, theme, "Kernel", "aster 0.4.0 (higher half, x86_64)");
+                self.info_row(surface, x, &mut cy, width, theme, "Kernel", "aster 0.5.0 (higher half, x86_64)");
 
                 self.info_row(surface, x, &mut cy, width, theme, "ABI", "Aster ABI 1");
 
@@ -2971,6 +3114,7 @@ impl SettingsApp {
 
             if ly >= 12 && index < SECTIONS.len() {
                 self.section = index;
+                sys::log(format!("settings: section {}", self.section).as_bytes());
             }
 
             return None;
@@ -3027,6 +3171,64 @@ impl SettingsApp {
                 }
             }
 
+            9 => {
+                let top = 54;
+                let column = width / 2;
+
+                if body_y >= top + 16 && body_y <= top + 42 {
+                    let index = ((lx - bx) / 88).max(0) as usize;
+                    if index < 4 && lx >= bx {
+                        return Some(Action::SetQuality(index as u8));
+                    }
+                }
+                if body_y >= top + 50 && body_y <= top + 88 {
+                    let value = ((lx - bx) as f32 / width as f32).clamp(0.0, 1.0);
+                    return Some(Action::SetAnimationSpeed(0.25 + value * 1.75));
+                }
+                if body_y >= top + 92 && body_y <= top + 130 {
+                    let value = ((lx - bx) as f32 / width as f32).clamp(0.0, 1.0);
+                    return Some(Action::SetDockSize(0.7 + value * 0.6));
+                }
+                if body_y >= top + 134 && body_y <= top + 172 {
+                    let value = ((lx - bx) as f32 / width as f32).clamp(0.0, 1.0);
+                    return Some(Action::SetDockMagnification(value));
+                }
+                if body_y >= top + 196 && body_y <= top + 220 {
+                    let index = ((lx - bx) / 64).max(0) as usize;
+                    let limits = [30u16, 60, 120, 0];
+                    if index < limits.len() && lx >= bx {
+                        return Some(Action::SetFrameLimit(limits[index]));
+                    }
+                }
+                if body_y >= top + 250 && body_y <= top + 274 {
+                    let index = ((lx - bx) / 78).max(0) as usize;
+                    if index < 3 && lx >= bx {
+                        return Some(Action::SetDockPosition(index as u8));
+                    }
+                }
+                if body_y >= top + 286 && body_y <= top + 286 + 5 * 24 {
+                    let col = if lx >= bx + column { 1 } else { 0 };
+                    let row = ((body_y - (top + 286)) / 24).max(0) as usize;
+                    let index = row * 2 + col;
+                    let toggle_x = bx + col as i32 * column + column - 42;
+                    if index < 10 && lx >= toggle_x && lx <= toggle_x + 36 {
+                        let values = [
+                            theme.window_animations,
+                            theme.dock_animations,
+                            theme.workspace_animations,
+                            theme.ui_animations,
+                            theme.smooth_scrolling,
+                            theme.shadows,
+                            theme.transparency,
+                            theme.blur,
+                            theme.dock_indicators,
+                            theme.dock_autohide,
+                        ];
+                        return Some(Action::SetGraphicsFlag(index as u8, !values[index]));
+                    }
+                }
+            }
+
             3 => {
                 if self.renew_button.contains(lx, body_y) {
                     let result = sys::net_renew_dhcp();
@@ -3047,8 +3249,10 @@ impl SettingsApp {
         if event.value == 1 {
             if event.code == keys::DOWN {
                 self.section = (self.section + 1).min(SECTIONS.len() - 1);
+                sys::log(format!("settings: section {}", self.section).as_bytes());
             } else if event.code == keys::UP {
                 self.section = self.section.saturating_sub(1);
+                sys::log(format!("settings: section {}", self.section).as_bytes());
             }
         }
 
@@ -3840,6 +4044,8 @@ pub struct MonitorApp {
 
     net: Option<aster_abi::NetStatus>,
 
+    graphics: Option<crate::render::EngineSnapshot>,
+
     logs: [u8; 3072],
 
     log_len: usize,
@@ -3867,6 +4073,8 @@ impl MonitorApp {
             storage: None,
 
             net: None,
+
+            graphics: None,
 
             logs: [0; 3072],
 
@@ -3943,6 +4151,8 @@ impl MonitorApp {
         self.storage = sys::storage_details();
 
         self.net = sys::net_status();
+
+        self.graphics = Some(crate::render::snapshot());
 
         let logged = sys::log_read(&mut self.logs);
 
@@ -4036,6 +4246,18 @@ impl MonitorApp {
                     })
                     .unwrap_or_else(|| "-".to_string()),
             ),
+            (
+                "Graphics",
+                self.graphics
+                    .map(|stats| {
+                        if stats.frame_ms > 0.0 {
+                            format!("{:.0} fps", 1000.0 / stats.frame_ms)
+                        } else {
+                            "-".to_string()
+                        }
+                    })
+                    .unwrap_or_else(|| "-".to_string()),
+            ),
         ];
 
         let card_w = (content.w - 40 - (cards.len() as i32 - 1) * 12) / cards.len() as i32;
@@ -4073,7 +4295,27 @@ impl MonitorApp {
             );
         }
 
-        y += 20;
+        if let Some(stats) = self.graphics {
+            surface.draw_text(
+                x,
+                y + 18,
+                &format!(
+                    "software renderer   {:.1} ms frame   {} ms draw   {} ms present   {} dirty regions / {} KiB   {} full redraws   {} animations   {} windows",
+                    stats.frame_ms,
+                    stats.draw_ms,
+                    stats.present_ms,
+                    stats.dirty_regions,
+                    stats.dirty_pixels / 1024,
+                    stats.full_redraws,
+                    stats.animations,
+                    stats.windows
+                ),
+                CAPTION,
+                palette.secondary,
+            );
+        }
+
+        y += 38;
 
         let graph_w = (content.w - 52) / 2;
 
@@ -4270,6 +4512,18 @@ impl MonitorApp {
 
 // ===========================================================================
 
+pub struct TextTab {
+    path: String,
+
+    text: String,
+
+    cursor: usize,
+
+    scroll: i32,
+
+    dirty: bool,
+}
+
 pub struct TextApp {
     path: String,
 
@@ -4282,6 +4536,12 @@ pub struct TextApp {
     dirty: bool,
 
     status: String,
+
+    tabs: Vec<TextTab>,
+
+    active_tab: usize,
+
+    display_scroll: f32,
 }
 
 impl TextApp {
@@ -4298,6 +4558,18 @@ impl TextApp {
             dirty: false,
 
             status: "New file".to_string(),
+
+            tabs: vec![TextTab {
+                path: "/home/user/DOCS/UNTITLED.TXT".to_string(),
+                text: String::new(),
+                cursor: 0,
+                scroll: 0,
+                dirty: false,
+            }],
+
+            active_tab: 0,
+
+            display_scroll: 0.0,
         };
 
         if let Some(path) = path {
@@ -4307,32 +4579,130 @@ impl TextApp {
         app
     }
 
+    fn store_active(&mut self) {
+        if let Some(tab) = self.tabs.get_mut(self.active_tab) {
+            tab.path = self.path.clone();
+            tab.text = self.text.clone();
+            tab.cursor = self.cursor;
+            tab.scroll = self.scroll;
+            tab.dirty = self.dirty;
+        }
+    }
+
+    fn load_tab(&mut self, index: usize) {
+        if index >= self.tabs.len() || index == self.active_tab {
+            return;
+        }
+        self.store_active();
+        self.active_tab = index;
+        let tab = &self.tabs[index];
+        self.path = tab.path.clone();
+        self.text = tab.text.clone();
+        self.cursor = tab.cursor;
+        self.scroll = tab.scroll;
+        self.display_scroll = tab.scroll as f32;
+        self.dirty = tab.dirty;
+        self.status = format!("Tab {} of {}", index + 1, self.tabs.len());
+        sys::log(format!("text: tab {} of {}", index + 1, self.tabs.len()).as_bytes());
+    }
+
     fn load(&mut self, path: &str) {
+        if let Some(index) = self.tabs.iter().position(|tab| tab.path == path) {
+            self.load_tab(index);
+            return;
+        }
+        self.store_active();
+        self.tabs.push(TextTab {
+            path: path.to_string(),
+            text: String::new(),
+            cursor: 0,
+            scroll: 0,
+            dirty: false,
+        });
+        self.active_tab = self.tabs.len() - 1;
         self.path = path.to_string();
+        self.text.clear();
+        self.cursor = 0;
+        self.scroll = 0;
+        self.display_scroll = 0.0;
+        self.dirty = false;
 
         match sys::read_file(path) {
             Some(data) => {
                 self.text = String::from_utf8_lossy(&data).to_string();
-
                 self.cursor = self.text.len();
-
-                self.scroll = 0;
-
-                self.dirty = false;
-
                 self.status = format!("Opened {} ({} bytes)", path, data.len());
             }
-
             None => {
-                self.text.clear();
-
-                self.cursor = 0;
-
-                self.dirty = false;
-
                 self.status = format!("New file: {}", path);
             }
         }
+        self.store_active();
+    }
+
+    fn new_tab(&mut self) {
+        self.store_active();
+        let path = format!("/home/user/DOCS/UNTITLED-{}.TXT", self.tabs.len() + 1);
+        self.tabs.push(TextTab {
+            path: path.clone(),
+            text: String::new(),
+            cursor: 0,
+            scroll: 0,
+            dirty: false,
+        });
+        self.active_tab = self.tabs.len() - 1;
+        self.path = path;
+        self.text.clear();
+        self.cursor = 0;
+        self.scroll = 0;
+        self.display_scroll = 0.0;
+        self.dirty = false;
+        self.status = "New tab".to_string();
+        sys::log(format!("text: tab {} of {}", self.active_tab + 1, self.tabs.len()).as_bytes());
+    }
+
+    fn close_tab(&mut self, index: usize) {
+        if self.tabs.len() <= 1 {
+            return;
+        }
+        self.store_active();
+        self.tabs.remove(index);
+        if self.active_tab > index {
+            self.active_tab -= 1;
+        } else if self.active_tab == index {
+            self.active_tab = self.active_tab.min(self.tabs.len() - 1);
+        }
+        let active = self.active_tab;
+        let tab = &self.tabs[active];
+        self.path = tab.path.clone();
+        self.text = tab.text.clone();
+        self.cursor = tab.cursor;
+        self.scroll = tab.scroll;
+        self.display_scroll = tab.scroll as f32;
+        self.dirty = tab.dirty;
+        self.status = format!("Tab {} of {}", active + 1, self.tabs.len());
+        sys::log(format!("text: tab {} of {}", active + 1, self.tabs.len()).as_bytes());
+    }
+
+    fn next_tab(&mut self, delta: i32) {
+        if self.tabs.len() <= 1 {
+            return;
+        }
+        let count = self.tabs.len() as i32;
+        let next = (self.active_tab as i32 + delta).rem_euclid(count) as usize;
+        self.load_tab(next);
+    }
+
+    fn tab_layout(&self, content: Rect) -> (usize, i32, i32) {
+        let available = (content.w - 44).max(80);
+        let max_visible = ((available / 104).max(1) as usize).min(8);
+        let visible = self.tabs.len().min(max_visible);
+        let start = self
+            .active_tab
+            .saturating_sub(max_visible / 2)
+            .min(self.tabs.len().saturating_sub(visible));
+        let width = (available / visible.max(1) as i32).clamp(72, 190);
+        (start, width, visible as i32)
     }
 
     fn display_name(&self) -> String {
@@ -4357,12 +4727,83 @@ impl TextApp {
         }
     }
 
+    fn tick(&mut self, theme: &Theme) {
+        let target = self.scroll as f32;
+        if !theme.smooth_scrolling || theme.reduce_motion {
+            self.display_scroll = target;
+            return;
+        }
+        let delta = target - self.display_scroll;
+        if delta.abs() <= 0.05 {
+            self.display_scroll = target;
+        } else {
+            self.display_scroll += delta * 0.28;
+        }
+    }
+
     fn draw(&mut self, surface: &mut Surface, content: Rect, theme: &Theme) {
         let palette = theme.palette();
 
         surface.fill_rect(content, palette.surface);
 
-        let toolbar = Rect::new(content.x, content.y, content.w, 42);
+        let tab_bar = Rect::new(content.x, content.y, content.w, 30);
+        surface.fill_rect(tab_bar, Color::rgb(232, 232, 237));
+        let (start, tab_width, visible) = self.tab_layout(content);
+        for slot in 0..visible {
+            let index = start + slot as usize;
+            let Some(tab) = self.tabs.get(index) else {
+                break;
+            };
+            let rect = Rect::new(
+                content.x + 8 + slot * tab_width,
+                tab_bar.y + 4,
+                tab_width - 2,
+                26,
+            );
+            let active = index == self.active_tab;
+            surface.fill_rounded(
+                rect,
+                7,
+                if active {
+                    palette.surface
+                } else {
+                    Color::rgb(225, 225, 231)
+                },
+            );
+            if active {
+                surface.fill_rect(
+                    Rect::new(rect.x + 6, rect.bottom() - 2, rect.w - 12, 2),
+                    theme.accent_color(),
+                );
+            }
+            let name = tab.path.rsplit('/').next().unwrap_or("untitled");
+            ui::draw_text_truncated(
+                surface,
+                rect.x + 9,
+                rect.y + 6,
+                &format!("{}{}", name, if tab.dirty { " *" } else { "" }),
+                CAPTION,
+                if active {
+                    palette.text
+                } else {
+                    palette.secondary
+                },
+                rect.w - 30,
+            );
+            ui::draw_icon(
+                surface,
+                Icon::Close,
+                Rect::new(rect.right() - 17, rect.y + 8, 9, 9),
+                palette.tertiary,
+                1,
+                theme,
+            );
+        }
+        let plus = Rect::new(content.right() - 36, tab_bar.y + 5, 26, 22);
+        surface.fill_rounded(plus, 6, palette.elevated);
+        surface.draw_text(plus.x + 8, plus.y + 3, "+", BODY_MEDIUM, palette.text);
+
+        let toolbar = Rect::new(content.x, content.y + 30, content.w, 42);
 
         surface.fill_rect(toolbar, palette.elevated);
 
@@ -4377,7 +4818,7 @@ impl TextApp {
 
         let new_button = Rect::new(toolbar.right() - 176, toolbar.y + 9, 76, 24);
 
-        ui::draw_button(surface, new_button, "New", false, theme, false, true);
+        ui::draw_button(surface, new_button, "New Tab", false, theme, false, true);
 
         let name = ui::truncate(
             surface,
@@ -4406,6 +4847,7 @@ impl TextApp {
         );
 
         let line_height = 18;
+        let view_scroll = self.display_scroll.round() as i32;
 
         let lines: Vec<&str> = self.text.split('\n').collect();
 
@@ -4425,8 +4867,8 @@ impl TextApp {
 
         let text_x = editor.x + 46;
 
-        for index in self.scroll..(self.scroll + visible).min(lines.len() as i32) {
-            let y = editor.y + (index - self.scroll) * line_height + 8;
+        for index in view_scroll..(view_scroll + visible).min(lines.len() as i32) {
+            let y = editor.y + (index - view_scroll) * line_height + 8;
 
             let number = format!("{}", index + 1);
 
@@ -4451,7 +4893,7 @@ impl TextApp {
 
         let caret_x = text_x + surface.text_width(column_text, MONO);
 
-        let caret_y = editor.y + (current_line - self.scroll) * line_height + 8;
+        let caret_y = editor.y + (current_line - view_scroll) * line_height + 8;
 
         if caret_y >= editor.y && caret_y < editor.bottom() - 8 {
             surface.fill_rect(Rect::new(caret_x, caret_y + 1, 1, 16), theme.accent_color());
@@ -4486,6 +4928,28 @@ impl TextApp {
 
         let ctrl = event.mods & aster_abi::mods::CTRL != 0;
 
+        if ctrl && event.code == b't' as u32 {
+            self.new_tab();
+            return None;
+        }
+        if ctrl && event.code == keys::PAGE_DOWN {
+            self.next_tab(1);
+            return None;
+        }
+        if ctrl && event.code == keys::PAGE_UP {
+            self.next_tab(-1);
+            return None;
+        }
+        if ctrl && event.code >= b'1' as u32 && event.code <= b'8' as u32 {
+            self.load_tab((event.code - b'1' as u32) as usize);
+            return None;
+        }
+        if ctrl && event.code == keys::F4 {
+            let index = self.active_tab;
+            self.close_tab(index);
+            return None;
+        }
+
         match event.code {
             keys::BACKSPACE => {
                 if self.cursor > 0 {
@@ -4501,6 +4965,15 @@ impl TextApp {
 
                     self.dirty = true;
                 }
+            }
+
+            keys::PAGE_UP => {
+                self.scroll = (self.scroll - 10).max(0);
+            }
+
+            keys::PAGE_DOWN => {
+                let lines = self.text.split('\n').count() as i32;
+                self.scroll = (self.scroll + 10).min((lines - 1).max(0));
             }
 
             keys::ENTER => self.insert('\n'),
@@ -4589,25 +5062,37 @@ impl TextApp {
     fn mouse(&mut self, x: i32, y: i32, content: Rect) -> Option<Action> {
         let (lx, ly) = local(content, x, y);
 
-        if ly < 42 {
-            if lx >= content.w - 92 && lx < content.w - 12 {
-                return Some(self.save());
+        if ly < 30 {
+            if lx >= content.w - 36 && lx <= content.w - 10 {
+                self.new_tab();
+                return None;
             }
-
-            if lx >= content.w - 176 && lx < content.w - 100 {
-                self.path = "/home/user/DOCS/UNTITLED.TXT".to_string();
-
-                self.text.clear();
-
-                self.cursor = 0;
-
-                self.dirty = false;
+            let (start, tab_width, visible) = self.tab_layout(content);
+            let relative = lx - 8;
+            if relative >= 0 && relative < tab_width * visible {
+                let slot = (relative / tab_width) as usize;
+                let index = start + slot;
+                let within = relative - slot as i32 * tab_width;
+                if within >= tab_width - 22 {
+                    self.close_tab(index);
+                } else {
+                    self.load_tab(index);
+                }
             }
-
             return None;
         }
 
-        let line = ((ly - 42 - 8) / 18).max(0) as usize + self.scroll as usize;
+        if ly < 72 {
+            if lx >= content.w - 92 && lx < content.w - 12 {
+                return Some(self.save());
+            }
+            if lx >= content.w - 176 && lx < content.w - 100 {
+                self.new_tab();
+            }
+            return None;
+        }
+
+        let line = ((ly - 72 - 8) / 18).max(0) as usize + self.scroll as usize;
 
         let mut index = 0;
 

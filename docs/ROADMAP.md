@@ -3,6 +3,98 @@
 Status legend: COMPLETE, PARTIAL, NOT STARTED, BLOCKED. Every milestone names
 the acceptance evidence, not just the work item.
 
+## Release roadmap (updated 2026-11-21)
+
+The phase sections below remain the engineering backlog. This section is the
+product-level release plan; every version gets a directory under
+`docs/releases/` with its baseline, test report, performance data and known
+limitations.
+
+### 0.5.0 - Graphics Engine & Motion System (COMPLETE FOR MILESTONE)
+
+Delivered: dirty-region software compositor with partial present and idle frame
+skipping; measured frame/telemetry in Monitor; Quality/Balanced/Performance/
+Adaptive modes; `aster-motion` easing/tween/spring/track/sequence engine; window
+state machine with animated open/close/minimize-to-dock/restore/maximize/snap;
+Dock 2.0 positions/size/magnification/autohide/indicators; workspace slide;
+Window Overview with captured previews; held-Alt switcher; Text tabs; menu/toast
+motion; real effect switches; Graphics & Motion settings with persistence.
+
+Not delivered: GPU acceleration, VirtIO-GPU, live backdrop blur, per-window
+offscreen surfaces, occlusion culling, HiDPI runtime scaling, multi-monitor,
+Stage Manager/window groups, drag-reordered tabs. These remain backlog and are
+documented in `docs/releases/0.5.0/`.
+
+### 0.6.0 - Hardware, Audio & Power
+
+- ACPI (RSDP/XSDT/MADT/FADT), APIC/IOAPIC, MSI and interrupt-driven e1000/AHCI;
+  SMP groundwork with two vCPUs.
+- USB xHCI: HID keyboard/mouse, mass storage and hotplug.
+- Audio: HDA, mixer, PCM, system sounds and volume in Control Center.
+- Bluetooth: USB HCI, BLE and pairing UI; audio profiles once audio is stable.
+- Power: shutdown, reboot, sleep, battery/thermal, lid and watchdog.
+- Device Manager, hardware inventory, driver model and error reporting.
+- Multi-monitor and EDID; display modes if not delivered in 0.5.
+
+### 0.7.0 - Storage, Users & Security
+
+- AFS v2: journal/COW, long names, permissions, snapshots and crash-injection
+  tests; migration from FAT32.
+- Users: accounts, login/lock screen, Argon2id, sessions and fast user switch.
+- Permissions: capabilities, file ACLs, privilege prompts, network caps.
+- Isolation: every app out of process, sandbox profiles, syscall filters and
+  shared-memory surfaces.
+- Hardening: ASLR/KASLR, SMEP/SMAP/UMIP, guard pages, quotas and audit log.
+- Crypto: CSPRNG, TLS 1.3, certificate store, signatures and the loader's
+  secure-boot chain.
+- Firewall and network policy, DNS privacy, updated threat model and external
+  review.
+
+### 0.8.0 - Ecosystem & Developer Platform
+
+- App ABI 2 with stability guarantees, versioned SDK, examples, templates and
+  `cargo aster`.
+- Out-of-process app model: surface sharing, input routing, clipboard and
+  drag-and-drop between apps.
+- Package format, manager, repository, signatures, dependencies and rollback;
+  a real Store.
+- Developer tools: UI inspector, profiler, crash reporter, log viewer and
+  debug symbols.
+- One real third-party port (game or emulator) as proof of graphics, audio,
+  input and packaging.
+
+### 0.9.0 - Release Candidate
+
+- Feature freeze, installer (partitioning, bootloader install, recovery),
+  updates with A/B or rollback, recovery/safe mode.
+- Boot-time, memory and frame budgets on reference hardware.
+- Hardware matrix (QEMU plus two or three physical machines).
+- Accessibility audit (WCAG 2.2 AA), keyboard-only paths, i18n (EN/DE).
+- Fuzzing (syscalls, filesystem, network), 24-hour stability and power-loss
+  tests.
+- Documentation, release notes, signed artifacts and security review.
+
+### 1.0.0 - Aster OS
+
+First complete release: desktop, kernel, networking, audio, security, SDK,
+installer, updates and ecosystem. Release gate: nothing is claimed that is not
+tested.
+
+### 1.x horizon
+
+Browser with engine integration, remote desktop/virtualization, screen reader,
+voice/touch/pen input, cloud sync/backup, more GPUs and hardware video, and
+additional architectures as research.
+
+### Cross-cutting tracks
+
+- Performance budgets per release, not only at the end.
+- Accessibility from 0.5 onward; audit in 0.9.
+- Security and threat-model review per release.
+- Golden images, fuzzing, fault injection and CI on real runners.
+- Release evidence: baseline, test report, performance and known limitations.
+- Real hardware from 0.6 onward.
+
 ## Phase 0 - Research and architecture (COMPLETE)
 
 Delivered: `docs/research/` (kernel architecture, UEFI boot, x86_64 memory and
@@ -71,20 +163,26 @@ Remaining:
 | AFS v2 (journal/COW) | AFS v1 | Crash-injection tests recover without corruption |
 | Service manager + init | SPAWN, IPC | PARTIAL: configd supervisor restarts one service; generic manager/KILL next |
 
-## Phase 5 - Graphics (PARTIAL)
+## Phase 5 - Graphics (PARTIAL, 0.5.0 delivered)
 
-Complete: ring-3 software compositor, window manager, dock, top bar, launcher,
-control centre, notifications, virtual desktops, animations, dark/light themes.
+Complete: ring-3 software compositor, dirty-region renderer, partial present,
+window manager state machine, Dock 2.0, top bar, launcher, Control Centre,
+notifications, workspace slides, overview, quick switcher, Text tabs, motion
+engine and Graphics & Motion settings.
 
-Remaining:
-
-| Item | Acceptance |
-|---|---|
-| Damage tracking | Idle desktop drops below 5% of one core; clock-only updates repaint only the bar |
-| HiDPI and scaling | 1.25x/1.5x/2x layout without blurry text; settings control |
-| Accessibility | Visible focus for every control, reduced motion, high-contrast theme, keyboard-only navigation |
-| Multi-monitor | Two GOP displays (or one display + dummy) with independent work areas |
-| GPU acceleration | VirtIO-GPU or Intel/AMD driver with a 2D path; software fallback retained |
+| Item | State | Acceptance |
+|---|---|---|
+| Engine core (layers, dirty regions, partial present) | COMPLETE | Pixel tests; idle frames skipped; no full redraw when idle |
+| Motion / window animations | COMPLETE | Time-based transitions; real opacity; host motion tests |
+| Overview / Alt-Tab | COMPLETE | Real captured previews; keyboard and pointer paths tested |
+| Dock autohide / positions | COMPLETE | Bottom/left/right, size, magnification, autohide, indicators |
+| Glassmorphism | PARTIAL | Shadows/transparency/effects switches; blur is cached wallpaper blur |
+| HiDPI and scaling | NOT STARTED | Display/DisplaySet + ui_scale foundation only |
+| Stage Manager / window groups | NOT STARTED | Tabs exist in Text only; no window groups |
+| Fullscreen | PARTIAL | Window maximize; no dedicated fullscreen space |
+| Accessibility | PARTIAL | Reduce motion/speed/effect switches; no accessibility tree/high contrast |
+| Multi-monitor | NOT STARTED | Single real display; 0.6 target |
+| GPU acceleration | NOT STARTED | Software renderer only; no fake metrics |
 
 ## Phase 6 - Applications (PARTIAL)
 
@@ -149,3 +247,8 @@ farm, installer media, release notes, signed artifacts.
 | Software rendering performance | Unusable on low-end emulation | Damage tracking, lazy heap, GPU path later |
 | Weak security model | Cannot claim "secure OS" | Threat model, explicit gaps, phased hardening |
 | Scope creep into mockups | Loss of credibility | Feature matrix requires evidence; banned fake UI |
+| Glassmorphism blur cost | Frame budget collapse in software rendering | Downsample and cache the backdrop, adapt quality, offer reduce transparency |
+| Stage Manager scope | Half-finished window groups | Minimal real stage model, deterministic transitions, automated probes |
+| UI scale debt | Clipped layouts at 1.25/1.5/2.0 | Scale at drawing and input boundaries; golden images per scale |
+| VirtIO-GPU protocol risk | No display on the new backend | Keep GOP as the default fallback; test both paths in QEMU |
+| Uncommitted 0.5 work | Lost or duplicated work | Audit first, preserve the working tree, commit in logical steps |

@@ -151,6 +151,8 @@ desktop's own frame-time log. Results are recorded in
 | Persistent home | Implemented | Yes | write/reboot/read plus host FAT verification |
 | Missing/corrupt data disk | Implemented | Yes | desktop boots; mount rejected; no fault |
 | Networking | Implemented (IPv4) | Yes | `net_test.py`: DHCP, ICMP, TCP echo + 64 KiB bulk, UDP echo, DNS |
+| Graphics/motion | Implemented for milestone | Yes | `graphics_test.py` pixel checks; `cargo test -p aster-motion` |
+| Window overview/switcher/tabs | Implemented/partial | Yes | F3 overview, held-Alt switcher, Text tabs in `graphics_test.py` |
 | Audio | Not applicable | - | not implemented |
 | SMP/APIC | Not applicable | - | not implemented |
 | Security isolation | Partial | - | ring-3 faults are handled; no exploit tests |
@@ -167,9 +169,9 @@ and longer timeouts; they can be enabled in CI later.
 - No fault-injection tests (out-of-memory, disk failure, corrupted ramfs).
 - No SMP or interrupt-storm stress tests.
 - No real-hardware test farm yet.
-- No pixel-diff regression baselines for the desktop.
-- No automated test for window resizing, snapping, or the notification panel.
-- No test for the planned IPC or `SPAWN`.
+- No golden-image pixel-diff baselines; graphics tests assert specific state pixels.
+- No automated test for window resizing, snapping, menu/toast fades or the notification panel.
+- No forced low-FPS animation test or leak/soak test.
 
 Each gap is listed in `docs/PROJECT_STATUS.md` with the milestone that should
 close it.

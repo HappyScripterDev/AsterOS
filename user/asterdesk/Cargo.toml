@@ -6,6 +6,7 @@ description = "Aster Desktop - ring-3 desktop environment"
 
 [dependencies]
 aster-abi = { path = "../../shared/aster-abi" }
+aster-motion = { path = "../../shared/aster-motion" }
 libm = "0.2"
 
 [[bin]]

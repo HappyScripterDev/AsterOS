@@ -6,11 +6,11 @@ Aster OS is an independent, from-scratch desktop operating system for x86_64.
 It is **not** a Linux distribution, **not** a modified Windows or macOS, and
 **not** a desktop mockup. It has its own UEFI bootloader, higher-half kernel,
 memory manager, scheduler, system-call ABI, filesystem, input stack, and a
-ring-3 desktop environment with a light, macOS-inspired software compositor, isolated child processes, a block/mount storage stack, a persistent FAT32 home volume, a user-space settings service and a real wired IPv4 network stack.
+ring-3 desktop environment with a light, macOS-inspired software compositor, a time-based animation engine, dirty-region rendering, isolated child processes, a block/mount storage stack, a persistent FAT32 home volume, a user-space settings service and a real wired IPv4 network stack.
 
 ![Aster Desktop](docs/screenshots/desktop.png)
 
-## Status: 0.4.0 networking
+## Status: 0.5.0 graphics and motion
 
 This repository contains a working, bootable system on QEMU (UEFI + GPT/FAT32
 disk image). The current milestone is a **single-CPU developer preview**:
@@ -22,16 +22,17 @@ disk image). The current milestone is a **single-CPU developer preview**:
 | Memory | 4 KiB frames, 32 GiB addressable bitmap, per-process PML4, NX/W^X user mappings, heap self-tests, user copy validation |
 | Drivers | COM1 serial, UEFI GOP framebuffer, PS/2 keyboard + mouse (IRQ driven), PIT, PCI config, AHCI (q35), Intel 82540EM (e1000) |
 | Filesystem | VFS + mount table; ramfs root for system files, FAT32 at `/home/user` with create/read/write/mkdir/rename/unlink |
-| Desktop | Aster Desktop in ring 3: light menu bar, Spotlight launcher, dock with generated app icons and magnification, macOS-style window manager (traffic lights, drag, resize, maximize, snap, animations), Control Centre, notifications, virtual desktops |
+| Desktop | Aster Desktop in ring 3: light menu bar, Spotlight, Dock 2.0 (bottom/left/right, size, magnification, auto-hide), animated window manager, Window Overview (F3), Alt+Tab switcher, workspace slides, Control Centre and notifications |
 | Storage | Block registry with capacity/bounds/flush/counters, mount table, GPT + FAT32 at `/home/user`; v1 settings with backup; Settings reports device, filesystem, capacity, used/free and I/O |
 | Network | e1000 Ethernet, ARP, IPv4, ICMP, UDP, DHCP client, DNS client, TCP client, blocking sockets; live menu bar, Network app, Settings and Monitor integration |
 | Processes | Private PML4 per process; `SPAWN`/`WAIT`; zombie reaping; every ring-3 exception contained; isolation probe with exit status 42 and a deliberate fault returning -11 |
 | Services | `configd` (ring 3) owns validated settings over IPC; desktop supervisor restarts it; direct-I/O fallback; timed IPC receive |
 | Files | Real create, rename, delete, copy, move, info, sort, search, forward/back and breadcrumbs on the mounted filesystem |
-| Monitor | CPU/memory/process cards, storage usage, real I/O counters and a kernel-log view |
+| Graphics | Software compositor with dirty-region repaint, partial present, real window opacity, shadows, transparency/effects switches, Quality/Balanced/Performance/Adaptive modes and a shared motion engine |
+| Monitor | CPU/memory/process cards, storage usage, network and real graphics telemetry (FPS, frame/draw/present time, dirty pixels, redraws), kernel-log view |
 | IPC | Kernel channels with per-process handles, 256-byte messages, blocking send/receive, close/hangup; ping-pong verified between isolated processes |
 | Apps | Terminal (real shell + ramfs), Files, Settings, Calculator, Monitor, Text, Notes, Calendar, Wallpapers, Network |
-| Tests | Image verifier, block/mount/FAT self-tests, boot smoke, UI/pointer/files probes, persistence, isolation, settings and service tests |
+| Tests | Image verifier, block/mount/FAT self-tests, boot smoke, UI/pointer/files probes, persistence, isolation, settings/service tests, live network tests and a graphics/window animation acceptance test |
 
 Everything in the table is exercised by booting the system and driving it, not
 by static screenshots. Known gaps are listed in
@@ -61,6 +62,7 @@ Headless smoke test:
 python tools/run.py --headless --timeout 12 --screenshot build/screen.ppm
 python tools/test.py                  # build + host image tests + boot assertions
 python tools/net_test.py              # real DHCP, ICMP, TCP, UDP and DNS test
+python tools/graphics_test.py         # dirty rendering, animations, overview, switcher, tabs
 ```
 
 Full instructions, supported hosts, and troubleshooting:
@@ -78,13 +80,17 @@ filesystem syscalls; it contains no UI code.
   tooltips, click to launch or focus.
 - Spotlight: `Ctrl+Space`, centred translucent search panel, keyboard
   navigation, filtered results; the panel resizes to the result count.
-- Windows: macOS-style traffic lights and centred titles, drag, eight-way
-  resize, minimize to the dock, maximize, snap to halves, rounded corners,
-  cached soft shadows and light title bars.
+- Windows: explicit state machine, macOS-style traffic lights and centred
+  titles, drag, eight-way resize, animated open/close/minimize/restore,
+  maximize/unmaximize, snap-to-halves with preview, real opacity fades and
+  focus-shadow transitions.
 - Control Centre: light-only appearance, real display brightness, reduce
   motion, accent colour, a live Ethernet tile (address or link state) and an
   honest "No adapter" row for Bluetooth and audio. There is no dark mode in
   this build.
+- Multitasking: F3/Ctrl+Up Window Overview with real captured previews,
+  held-Alt+TAB quick switcher, three workspaces with slide transitions and
+  indicators, and Text editor tabs.
 - Shortcuts: `Ctrl+Space` Spotlight, `Ctrl+W` close, `Ctrl+M` minimize,
   `Ctrl+Tab` cycle, `Ctrl+Left/Right` virtual desktops.
 
@@ -105,7 +111,19 @@ uses 8.3 names and has no journal yet, and Settings states both limits.
 Settings are versioned (`version=1`), validated per key and written through a
 temporary file with a backup. `configd` owns them in the normal path; the
 desktop supervisor restarts it on failure and falls back to direct I/O so the
-session is never locked out. See [0.4.0 release docs](docs/releases/0.4.0/).
+session is never locked out. The Graphics & Motion page controls real
+performance, dock and effect parameters. See
+[0.5.0 release docs](docs/releases/0.5.0/).
+
+### Graphics and motion
+
+![Window overview](docs/screenshots/graphics-overview.png)
+
+The compositor renders only dirty regions and presents only the changed
+rectangles; idle frames are skipped. Window geometry and opacity come from a real
+state machine and a time-based motion engine, with dock-targeted minimize and
+restore animations. The engine is **software-only**: there is no GPU backend,
+and the Monitor reports the software renderer instead of inventing GPU load.
 
 ### Networking
 
