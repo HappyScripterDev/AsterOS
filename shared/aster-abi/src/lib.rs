@@ -280,6 +280,7 @@ pub mod sys {
     pub const SEND: u64 = 44;
     pub const RECV: u64 = 45;
     pub const SOCKET_CLOSE: u64 = 46;
+    pub const POWER: u64 = 47;
 }
 
 /// Error codes returned in `rax` by system calls. Negative values are errors.

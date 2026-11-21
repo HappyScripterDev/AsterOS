@@ -1,6 +1,6 @@
 # Aster OS - Project Status
 
-Version: **0.5.0 graphics and motion**
+Version: **0.6.0 platform and devices (in progress)**
 Date: 2026-11-21
 Kernel: Aster 0.5.0 (higher half, x86_64)
 ABI: Aster ABI 1 (syscalls 1-46 unchanged)
@@ -88,7 +88,7 @@ Desktop: Aster Desktop (ring 3, software compositor, dirty-region renderer)
 | G4 | HiDPI scaling and multi-monitor placement | FOUNDATION ONLY |
 | G5 | Central graphics resource cache + leak tests | NOT STARTED |
 | G6 | Full component motion (buttons, toggles, dialogs) | PARTIAL |
-| N1 | APIC/IOAPIC/NIC interrupts | NOT STARTED |
+| N1 | APIC/IOAPIC/NIC interrupts | IN PROGRESS; ACPI phase 1 landed |
 | N2 | Inbound TCP + persistent network config | NOT STARTED |
 | K3 | Move apps out of the desktop process | NOT STARTED |
 | K6 | Per-process quotas and OOM policy | NOT STARTED |

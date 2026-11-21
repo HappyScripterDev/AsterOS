@@ -134,6 +134,12 @@ enum MenuKind {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+enum PowerPrompt {
+    Shutdown,
+    Restart,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 
 enum MenuAction {
     About,
@@ -155,6 +161,8 @@ enum MenuAction {
     Shortcuts,
 
     ShutDown,
+
+    Restart,
 
     Desktop(usize),
 
@@ -256,6 +264,8 @@ pub struct Desktop {
     control_center: bool,
 
     notif_panel: bool,
+
+    power_prompt: Option<PowerPrompt>,
 
     open_menu: Option<MenuKind>,
 
@@ -384,6 +394,8 @@ impl Desktop {
             control_center: false,
 
             notif_panel: false,
+
+            power_prompt: None,
 
             open_menu: None,
 
@@ -1325,6 +1337,9 @@ impl Desktop {
             if self.switcher.is_some() {
                 self.draw_switcher(now);
             }
+            if let Some(prompt) = self.power_prompt {
+                self.draw_power_prompt(prompt);
+            }
             self.draw_cursor();
 
             if self.theme.brightness < 0.999 {
@@ -1987,6 +2002,15 @@ impl Desktop {
         let ctrl = event.mods & mods::CTRL != 0;
         let alt = event.mods & mods::ALT != 0;
 
+        if self.power_prompt.is_some() {
+            match event.code {
+                aster_abi::keys::ESC => self.close_power_prompt(),
+                aster_abi::keys::ENTER => self.confirm_power(),
+                _ => {}
+            }
+            return;
+        }
+
         if alt && event.code == aster_abi::keys::TAB {
             if self.switcher.is_some() {
                 self.advance_switcher();
@@ -2192,6 +2216,17 @@ impl Desktop {
     }
 
     fn mouse_press(&mut self, x: i32, y: i32) {
+        if self.power_prompt.is_some() {
+            let (panel, cancel, confirm) = self.power_prompt_layout();
+            if cancel.contains(x, y) {
+                self.close_power_prompt();
+            } else if confirm.contains(x, y) {
+                self.confirm_power();
+            } else if !panel.contains(x, y) {
+                self.close_power_prompt();
+            }
+            return;
+        }
         if self.switcher.is_some() {
             return;
         }
@@ -2499,7 +2534,9 @@ impl Desktop {
 
             ),
 
-            MenuAction::ShutDown => sys::shutdown(),
+            MenuAction::ShutDown => self.open_power_prompt(PowerPrompt::Shutdown),
+
+            MenuAction::Restart => self.open_power_prompt(PowerPrompt::Restart),
 
             MenuAction::Desktop(index) => {
 
@@ -2760,6 +2797,7 @@ impl Desktop {
                 MenuItem::item("About Aster OS", "", MenuAction::About, false),
                 MenuItem::item("System Settings...", "", MenuAction::Settings, false),
                 MenuItem::separator(),
+                MenuItem::item("Restart...", "", MenuAction::Restart, false),
                 MenuItem::item("Shut Down...", "", MenuAction::ShutDown, false),
             ],
 
@@ -2946,6 +2984,95 @@ impl Desktop {
         } else {
             QualityMode::from_code(self.theme.quality)
         }
+    }
+
+    fn open_power_prompt(&mut self, prompt: PowerPrompt) {
+        self.power_prompt = Some(prompt);
+        self.open_menu = None;
+        self.control_center = false;
+        self.notif_panel = false;
+        self.needs_full = true;
+        self.dirty.add_all();
+    }
+
+    fn close_power_prompt(&mut self) {
+        if self.power_prompt.take().is_some() {
+            self.needs_full = true;
+            self.dirty.add_all();
+        }
+    }
+
+    fn power_prompt_layout(&self) -> (Rect, Rect, Rect) {
+        let panel = Rect::new((self.width - 400) / 2, (self.height - 190) / 2, 400, 190);
+        let cancel = Rect::new(panel.x + 24, panel.bottom() - 54, 120, 34);
+        let confirm = Rect::new(panel.right() - 174, panel.bottom() - 54, 150, 34);
+        (panel, cancel, confirm)
+    }
+
+    fn confirm_power(&mut self) {
+        match self.power_prompt {
+            Some(PowerPrompt::Shutdown) => sys::shutdown(),
+            Some(PowerPrompt::Restart) => sys::restart(),
+            None => {}
+        }
+    }
+
+    fn draw_power_prompt(&mut self, prompt: PowerPrompt) {
+        let (panel, cancel, confirm) = self.power_prompt_layout();
+        self.surface.fill_rect(
+            Rect::new(0, 0, self.width, self.height),
+            Color::rgba(0, 0, 0, 84),
+        );
+        self.surface.fill_rounded(
+            Rect::new(panel.x + 2, panel.y + 4, panel.w, panel.h),
+            18,
+            Color::rgba(0, 0, 0, 30),
+        );
+        self.draw_panel(panel, 18, material::PANEL);
+        let (title, body, action) = match prompt {
+            PowerPrompt::Shutdown => (
+                "Shut Down?",
+                "All open apps will close and the machine will power off.",
+                "Shut Down",
+            ),
+            PowerPrompt::Restart => (
+                "Restart?",
+                "All open apps will close and the machine will restart.",
+                "Restart",
+            ),
+        };
+        self.surface.draw_text_centered(
+            Rect::new(panel.x, panel.y + 20, panel.w, 26),
+            panel.y + 20,
+            title,
+            HEADLINE,
+            self.theme.palette().text,
+        );
+        self.surface.draw_text_centered(
+            Rect::new(panel.x + 20, panel.y + 56, panel.w - 40, 40),
+            panel.y + 58,
+            body,
+            BODY,
+            self.theme.palette().secondary,
+        );
+        self.surface
+            .fill_rounded(cancel, 9, Color::rgba(0, 0, 0, 16));
+        self.surface.draw_text_centered(
+            cancel,
+            cancel.y + 9,
+            "Cancel",
+            BODY_MEDIUM,
+            self.theme.palette().text,
+        );
+        self.surface
+            .fill_rounded(confirm, 9, self.theme.accent_color());
+        self.surface.draw_text_centered(
+            confirm,
+            confirm.y + 9,
+            action,
+            BODY_MEDIUM,
+            Color::rgb(255, 255, 255),
+        );
     }
 
     fn draw_panel(&mut self, rect: Rect, radius: i32, material: Material) {

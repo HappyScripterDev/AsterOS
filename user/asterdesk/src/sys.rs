@@ -512,13 +512,21 @@ pub fn poll_input(buffer: &mut [aster_abi::InputEvent]) -> usize {
     }
 }
 
-pub fn shutdown() -> ! {
+pub fn power(mode: u64) -> ! {
     unsafe {
-        syscall6(sys::SHUTDOWN, 0, 0, 0, 0, 0, 0);
+        syscall6(sys::POWER, mode, 0, 0, 0, 0, 0);
     }
     loop {
         core::hint::spin_loop();
     }
+}
+
+pub fn shutdown() -> ! {
+    power(0)
+}
+
+pub fn restart() -> ! {
+    power(1)
 }
 
 pub fn net_status() -> Option<aster_abi::NetStatus> {

@@ -18,7 +18,7 @@ verified during the recorded milestone session. Limitations are explicit.
 | Kernel heap | Implemented | Yes | First-fit, 48-256 MiB virtual limit, self-test |
 | Scheduler | Partial | Yes | Preemptive user threads; kernel threads cooperative; single CPU |
 | Context switching | Implemented | Yes | Callee-saved + FXSAVE, CR3 switch |
-| System calls | Partial | Yes | 46 numbers, 45 implemented; SET_THEME returns ENOSYS (light appearance is fixed) |
+| System calls | Partial | Yes | 47 numbers; POWER 47 (shutdown/restart), legacy SHUTDOWN 28; SET_THEME returns ENOSYS |
 | Ring-3 processes | Implemented | Yes | Desktop PID 1 plus spawned children; private PML4, 64 KiB stack, W^X ELF |
 | IPC | Implemented | Yes | Bidirectional channels, handles, blocking send/recv with receive timeout, close/hangup; 8x256 B queues |
 | Process creation API | Implemented | Yes | `SPAWN`/`WAIT`; isolation test spawns a normal and a faulting child |
@@ -27,7 +27,7 @@ verified during the recorded milestone session. Limitations are explicit.
 | PS/2 keyboard | Implemented | Yes | ASCII + special keys, modifiers; no typematic repeat in guest |
 | PS/2 mouse | Implemented | Yes | Absolute pointer, buttons; no wheel |
 | PCI configuration | Partial | Yes | Mechanism #1; AHCI found by class, e1000 by vendor/device; full enumeration/ACPI planned |
-| ACPI | Not implemented | - | RSDP captured only |
+| ACPI | Partial | Yes | RSDP/XSDT/FADT/MADT/MCFG/HPET validated; S5 shutdown and reset; no AML interpreter or SCI power button |
 | APIC / SMP | Not implemented | - | Single CPU, 8259 |
 | VirtIO block/network | Not implemented | - | AHCI is used for the data disk; no VirtIO devices |
 | AHCI (q35) | Implemented | Yes | Polling, IDENTIFY, single-sector DMA read/write, FLUSH CACHE EXT; NVMe/USB/audio/GPU absent |

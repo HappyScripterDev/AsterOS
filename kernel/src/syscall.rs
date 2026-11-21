@@ -98,6 +98,7 @@ pub fn handle(frame: &mut InterruptFrame) {
             0 => 0,
             code => error(code),
         },
+        sys::POWER => power(args[0]),
         _ => error(errno::ENOSYS),
     };
     frame.rax = result;
@@ -695,14 +696,13 @@ fn sync_storage() -> u64 {
 }
 
 fn shutdown() -> u64 {
-    unsafe {
-        // QEMU ACPI poweroff (q35) and the older i440fx mechanism.
-        core::arch::asm!("out dx, ax", in("dx") 0x604u16, in("ax") 0x2000u16, options(nomem, nostack));
-        core::arch::asm!("out dx, ax", in("dx") 0xB004u16, in("ax") 0x2000u16, options(nomem, nostack));
-    }
-    crate::info!("shutdown requested by user space");
-    crate::arch::cpu::halt();
-    0
+    crate::info!("shutdown requested by user space (legacy syscall)");
+    crate::arch::acpi::power(0);
+}
+
+fn power(mode: u64) -> u64 {
+    crate::info!("power requested by user space: mode {}", mode);
+    crate::arch::acpi::power(mode)
 }
 
 // ---------------------------------------------------------------------------

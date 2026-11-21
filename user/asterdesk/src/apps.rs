@@ -482,6 +482,8 @@ impl TerminalApp {
                     "  open <app>           launch an application",
                     "  echo <text>          print text",
                     "  clear                clear the screen",
+                    "  shutdown             power off through ACPI",
+                    "  reboot               restart through ACPI",
                     "  exit                 close the terminal",
                 ] {
                     self.lines.push(line.to_string());
@@ -1049,6 +1051,10 @@ impl TerminalApp {
             "echo" => self.lines.push(args.join(" ")),
 
             "clear" => self.lines.clear(),
+
+            "shutdown" => sys::shutdown(),
+
+            "reboot" => sys::restart(),
 
             "exit" => action = Some(Action::Close),
 

@@ -38,7 +38,7 @@ kernel writes. Missing mappings return `EINVAL`, never fault the kernel.
 | 25 | CHANNEL_SEND | handle, ptr, len | bytes | Implemented, blocks when full |
 | 26 | CHANNEL_RECV | handle, ptr, cap, timeout ms | bytes | Implemented, blocks when empty; ETIMEDOUT |
 | 27 | SET_THEME | - | 0 | **ENOSYS** (appearance is fixed to light) |
-| 28 | SHUTDOWN | - | halts | Implemented, no capability check |
+| 28 | SHUTDOWN | - | halts | Legacy alias for POWER mode 0 |
 | 29 | RTC | out ptr | 0 | Implemented |
 | 30 | PROC_LIST | out ptr, max | count | Implemented |
 | 31 | STORAGE_INFO | out ptr | 0 | Implemented (M1) |
@@ -57,6 +57,7 @@ kernel writes. Missing mappings return `EINVAL`, never fault the kernel.
 | 44 | SEND | id, ptr, len | bytes | Implemented, 64 KiB cap |
 | 45 | RECV | id, ptr, len, timeout ms | bytes / 0 EOF | Implemented, `EAGAIN` on timeout |
 | 46 | SOCKET_CLOSE | id | 0 | Implemented |
+| 47 | POWER | mode (0 shutdown, 1 restart) | halts/resets | Implemented via ACPI FADT |
 
 ## Error codes
 

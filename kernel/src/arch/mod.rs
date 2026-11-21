@@ -1,5 +1,6 @@
 //! x86_64 architecture support.
 
+pub mod acpi;
 pub mod cpu;
 pub mod gdt;
 pub mod idt;

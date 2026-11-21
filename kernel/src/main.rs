@@ -77,6 +77,7 @@ pub extern "C" fn kernel_main(boot_info_address: u64) -> ! {
 
     let boot = boot::init(boot_info_address);
     time::init(boot.boot_tsc);
+    arch::acpi::init();
 
     let (vendor, max_leaf) = arch::cpu::vendor();
     let vendor = core::str::from_utf8(&vendor).unwrap_or("unknown");
