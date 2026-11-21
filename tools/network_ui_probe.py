@@ -103,18 +103,23 @@ def main() -> int:
         time.sleep(0.7)
         type_text(qmp, "settings")
         enter(qmp)
-        time.sleep(1.6)
+        time.sleep(3.5)
         for _ in range(3):
             qmp.command("send-key", keys=[{"type": "qcode", "data": "down"}])
-            time.sleep(0.15)
-        time.sleep(0.6)
+            time.sleep(0.3)
+        time.sleep(1.5)
         qmp.command("screendump", filename=str((OUT / "2-settings-network.ppm").resolve()))
 
         before = serial.read_text(errors="replace").count("dhcp: discovering")
-        move_to(qmp, (640, 400), (469, 492))
+        move_to(qmp, (640, 400), (469, 508))
         click(qmp)
-        time.sleep(1.2)
-        after = serial.read_text(errors="replace").count("dhcp: discovering")
+        after = before
+        deadline = time.monotonic() + 8.0
+        while time.monotonic() < deadline:
+            after = serial.read_text(errors="replace").count("dhcp: discovering")
+            if after > before:
+                break
+            time.sleep(0.2)
         qmp.command("screendump", filename=str((OUT / "3-settings-renew.ppm").resolve()))
         time.sleep(1.0)
 
