@@ -29,8 +29,6 @@ from run import Qmp, drive_args, find_ovmf, find_qemu  # noqa: E402
 from seeds import SEED_FILES  # noqa: E402
 
 OUT = ROOT / "build" / "nettest"
-TCP_PORT = 9000
-UDP_PORT = 9001
 DNS_ANSWER = "10.0.2.77"
 DNS_NAME = "aster.test"
 
@@ -64,12 +62,12 @@ class TcpServer(socketserver.ThreadingTCPServer):
 class UdpEcho(threading.Thread):
     daemon = True
 
-    def __init__(self, port: int) -> None:
+    def __init__(self, port: int = 0) -> None:
         super().__init__()
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind(("127.0.0.1", port))
-        self.port = port
+        self.port = self.sock.getsockname()[1]
 
     def run(self) -> None:
         while True:
@@ -126,10 +124,13 @@ class DnsServer(threading.Thread):
 
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
-    tcp = TcpServer(("127.0.0.1", TCP_PORT), EchoHandler)
+    tcp = TcpServer(("127.0.0.1", 0), EchoHandler)
+    tcp_port = tcp.server_address[1]
     threading.Thread(target=tcp.serve_forever, daemon=True).start()
-    udp = UdpEcho(UDP_PORT)
+    udp = UdpEcho()
     udp.start()
+    udp_port = udp.port
+    print(f"host peers: TCP {tcp_port}, UDP {udp_port}, DNS 53")
 
     dns_enabled = True
     try:
@@ -141,8 +142,8 @@ def main() -> int:
         print(f"note: DNS leg skipped, cannot bind 127.0.0.1:53 ({error})")
 
     config = (
-        f"tcp=10.0.2.2:{TCP_PORT}\n"
-        f"udp=10.0.2.2:{UDP_PORT}\n"
+        f"tcp=10.0.2.2:{tcp_port}\n"
+        f"udp=10.0.2.2:{udp_port}\n"
         "bulk=65536\n"
     )
     if dns_enabled:

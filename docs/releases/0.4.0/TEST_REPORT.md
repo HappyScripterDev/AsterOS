@@ -64,8 +64,9 @@ Serial output from `tools/net_test.py`:
 
 The host-side peers were:
 
-- TCP echo on `127.0.0.1:9000` (`TCP_NODELAY`, 64 KiB reads);
-- UDP echo on `127.0.0.1:9001`;
+- TCP echo on a host-assigned ephemeral port (for example 64368 in the final
+  run; `TCP_NODELAY`, 64 KiB reads);
+- UDP echo on another host-assigned ephemeral port;
 - DNS server on `127.0.0.1:53`, answering `aster.test` with `10.0.2.77`;
 - QEMU SLIRP mapping `10.0.2.2` to the host loopback and providing the DHCP
   lease.
