@@ -36,8 +36,8 @@
 - Calibrated the Local APIC timer against the HPET and moved the 1 kHz tick to
   vector 63 after successful calibration; the PIT/IOAPIC route is masked only on
   success.
-- Added dynamic vectors 48-62 with handler registration, IRQ counters, MSI/MSI-X
-  capability walking and PCI INTx routing.
+- Added dynamic vectors 48-62 with handler registration, IRQ counters, MSI
+  capability walking (MSI-X is not implemented) and PCI INTx routing.
 - AHCI now uses MSI completion interrupts; e1000 uses IOAPIC INTx interrupts
   because QEMU's 82540EM has no MSI capability. Both keep bounded fallbacks.
 - Added PS/2 IntelliMouse detection, wheel packets/events and Files wheel

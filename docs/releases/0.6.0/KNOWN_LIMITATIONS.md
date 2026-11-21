@@ -29,6 +29,7 @@ inventory work below is real and tested. USB xHCI is still absent, so the
   the inventory surfaces; the Monitor app does not add a PCI/USB card.
 - **Wheel scrolling is wired to Files only.** Text has smooth Page Up/Down
   scrolling but no wheel handler; Settings content is not scrollable by wheel.
+- **MSI-X is not implemented.** Only the MSI capability (one vector) is parsed; no MSI-X table/PBA programming exists.
 - **e1000 MSI path is untested.** The PCI MSI parser exists and AHCI MSI is
   verified; QEMU's `e1000` device has no MSI capability (`status=0`, cap list
   empty), so the tested path is IOAPIC INTx. No MSI success is claimed for
