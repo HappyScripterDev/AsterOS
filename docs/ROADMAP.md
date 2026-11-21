@@ -12,29 +12,48 @@ limitations.
 
 ### 0.5.0 - Graphics Engine & Motion System (COMPLETE FOR MILESTONE)
 
-Delivered: dirty-region software compositor with partial present and idle frame
-skipping; measured frame/telemetry in Monitor; Quality/Balanced/Performance/
-Adaptive modes; `aster-motion` easing/tween/spring/track/sequence engine; window
-state machine with animated open/close/minimize-to-dock/restore/maximize/snap;
-Dock 2.0 positions/size/magnification/autohide/indicators; workspace slide;
-Window Overview with captured previews; held-Alt switcher; Text tabs; menu/toast
-motion; real effect switches; Graphics & Motion settings with persistence.
+Delivered on `milestone/aster-0.5.0-gpu`: dirty-region software compositor with
+partial present and idle frame skipping; measured frame telemetry; Quality/
+Balanced/Performance/Adaptive modes; `aster-motion` engine; window state machine
+and animated transitions; live glass materials sampling and blurring the
+composited backbuffer; per-window offscreen surfaces with window-level damage;
+SSE2 row fills and opaque window blits; fullscreen; Alt-Tab live previews;
+desktop edge-drop; four workspaces; heap rework; Graphics & Motion settings and
+the graphics/motion test harnesses. The annotated `v0.5.0` tag is unchanged.
 
-Not delivered: GPU acceleration, VirtIO-GPU, live backdrop blur, per-window
-offscreen surfaces, occlusion culling, HiDPI runtime scaling, multi-monitor,
-Stage Manager/window groups, drag-reordered tabs. These remain backlog and are
-documented in `docs/releases/0.5.0/`.
+Deferred with documented gaps: Stage Manager/window groups, HiDPI runtime
+scaling (1.25/1.5/2.0), VirtIO-GPU scanout/present, app-internal damage, resource
+cache/leak detector and tab drag/tear-out. These move to 0.6.2, not back into
+0.5. See `docs/releases/0.5.0/KNOWN_LIMITATIONS.md`.
 
-### 0.6.0 - Hardware, Audio & Power
+### 0.6.0 - Platform & Devices (NEXT)
 
-- ACPI (RSDP/XSDT/MADT/FADT), APIC/IOAPIC, MSI and interrupt-driven e1000/AHCI;
-  SMP groundwork with two vCPUs.
-- USB xHCI: HID keyboard/mouse, mass storage and hotplug.
-- Audio: HDA, mixer, PCM, system sounds and volume in Control Center.
-- Bluetooth: USB HCI, BLE and pairing UI; audio profiles once audio is stable.
-- Power: shutdown, reboot, sleep, battery/thermal, lid and watchdog.
-- Device Manager, hardware inventory, driver model and error reporting.
-- Multi-monitor and EDID; display modes if not delivered in 0.5.
+Goal: a real platform foundation. ACPI, APIC/IOAPIC, MSI, interrupt-driven
+e1000/AHCI, USB HID, power management and a device manager. This is the
+prerequisite for audio, Bluetooth, SMP and multi-monitor.
+
+- ACPI core: RSDP/XSDT, FADT, MADT, MCFG, HPET; S5 shutdown and reset.
+- APIC/IOAPIC/MSI; dynamic interrupt vectors; e1000 and AHCI interrupt-driven.
+- USB xHCI: HID keyboard/mouse, hotplug; mass storage optional.
+- Power menu (shutdown/restart), device manager, hardware inventory.
+- PS/2 mouse wheel and smooth scrolling.
+- No audio, Bluetooth, SMP, HiDPI or VirtIO-GPU in this release.
+
+Detailed plan: `docs/releases/0.6.0/ROADMAP.md`.
+
+### 0.6.1 - Audio, Bluetooth & SMP
+
+- HDA driver, mixer, PCM, system sounds and volume in Control Center.
+- Bluetooth USB HCI, BLE scanning/pairing; audio profiles after HDA is stable.
+- SMP with two vCPUs, per-CPU data, scheduler queues and TLB shootdown.
+- Thermal and battery readings where ACPI exposes them; no fake hardware.
+
+### 0.6.2 - Graphics & Shell Completion
+
+- VirtIO-GPU 2D resource, scanout and `FB_PRESENT`; GOP fallback.
+- HiDPI 1.0/1.25/1.5/2.0 and multi-monitor where the backend supports it.
+- Stage Manager/window groups and tab drag/tear-out.
+- App-internal damage, resource cache/eviction and leak tests.
 
 ### 0.7.0 - Storage, Users & Security
 

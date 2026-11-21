@@ -29,7 +29,8 @@
 - Smooth scrolling: Text Page Up/Down only; no wheel events in the PS/2 path.
 - UI motion: menus/toasts/window/dock animate; buttons/toggles/sliders/dialog
   backdrops remain immediate.
-- Effects: blur is precomputed wallpaper blur behind glass, not live backdrop blur.
+- Effects: glass samples the composited backbuffer and applies live downsample,
+  two box-blur passes, tint and noise; there is no GPU blur.
 - Resource management: ownership-based, no central cache/eviction/leak detector.
 - High-DPI/multi-monitor: data structures exist; only one 1.0-scale display is real.
 - Overview previews are captured when opening; they do not stream live video.
@@ -42,7 +43,6 @@
 - Rotation, multi-display window placement, runtime resolution changes.
 - Window groups, tab tearing, drag-reordered tabs.
 - High-contrast mode and screen-reader support.
-- Live backdrop blur.
 - Damage tracking inside app surfaces (dirty regions are compositor-level only).
 
 ## 4. Known issues

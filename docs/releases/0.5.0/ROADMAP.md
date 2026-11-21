@@ -25,8 +25,9 @@
 
 - **Tabs:** drag-to-reorder and tab tear-out are not implemented. Tabs work by click and
   keyboard; the architecture keeps tab state separated from the document state.
-- **Effects:** "blur" is a precomputed wallpaper blur used by glass panels, not a
-  live per-frame backdrop blur. There is no GPU blur.
+- **Effects:** glass samples the composited backbuffer and applies live downsample,
+  two box-blur passes, tint and noise; quality modes reduce the downsample/radius.
+  There is no GPU blur.
 - **Smooth scrolling:** implemented in the Text editor for Page Up/Down; the PS/2 input
   path has no wheel events, so mouse-wheel scrolling is not testable.
 - **UI motion:** menus and toasts animate; individual buttons, toggles, sliders and
