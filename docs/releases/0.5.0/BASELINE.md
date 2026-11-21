@@ -63,8 +63,8 @@ extension. Audit against the extended engine brief:
 | `aster-motion` easing/tween/spring/tracks/tests | DONE, 8 host tests |
 | Window state machine and animated transitions | DONE |
 | Dock 2.0, Overview, Alt-Tab, workspace slide, Text tabs | DONE |
-| Per-window offscreen surfaces + compositor blit | **NOT DONE**; windows draw directly into the desktop surface |
-| Damage v2 with app-content/occlusion tracking | **PARTIAL**; compositor-level rectangles only |
+| Per-window offscreen surfaces + compositor blit | **DONE**; each window owns a content-sized surface rendered in local coordinates and blitted at its content rect |
+| Damage v2 with app-content/occlusion tracking | **PARTIAL**; window-surface validity and blit-only composition are done, app-internal damage is not |
 | Live backdrop blur behind glass | **NOT DONE**; glass samples a precomputed wallpaper blur |
 | Material tokens (`ultra_thin`…`sidebar`) | **NOT DONE** |
 | Contrast test for glass text | **NOT DONE** |
@@ -111,3 +111,22 @@ Shipped after the baseline commit on `milestone/aster-0.5.0-gpu`:
 Remaining extension gaps are unchanged: per-window surfaces and Damage v2,
 Stage Manager, workspace drag, HiDPI >1.0, VirtIO-GPU scanout and `FB_PRESENT`,
 and SIMD raster paths.
+
+## 7. Extension phase 2 - per-window surfaces and window damage
+
+- Every `wm::Window` owns a content-sized `Vec<u32>` surface. Apps draw into it
+  in local coordinates `(0,0,w,h)`; the WM blits the buffer at the content rect.
+  Moving a window is now a row copy and does not involve the app at all.
+- Surfaces carry a validity flag and cached size. Input, size changes, a theme
+  signature change and the 500 ms caret-blink tick invalidate them. Invalid
+  windows re-rasterize once and contribute one dirty rectangle; valid windows
+  only blit.
+- `gfx::blit_window` uses `copy_nonoverlapping` rows for opaque windows and the
+  regular alpha path during fades, so window opacity applies exactly once.
+- `Theme::content_signature` drives palette/accent/motion invalidation without a
+  per-action table.
+- The heap from phase 1 now recycles window surfaces, so repeated open/close
+  cycles do not grow memory.
+
+Damage v2 is implemented at window granularity. App-internal damage (repainting
+only the changed rows of a text view) remains a documented gap.

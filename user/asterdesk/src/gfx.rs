@@ -826,6 +826,42 @@ impl Surface {
             }
         }
     }
+
+    /// Blit a cached window-content buffer at `destination`. The source is
+    /// content-sized and in local coordinates; the destination is the window's
+    /// content rect on screen. Opaque windows copy rows; a fading window routes
+    /// through `put` so the surface opacity applies exactly once.
+    pub fn blit_window(&mut self, source: &[u32], source_width: i32, destination: Rect) {
+        let rect =
+            destination
+                .intersect(self.clip)
+                .intersect(Rect::new(0, 0, self.width, self.height));
+        if rect.is_empty() {
+            return;
+        }
+        let source_x = rect.x - destination.x;
+        let source_y = rect.y - destination.y;
+        if self.opacity == 255 {
+            for row in 0..rect.h {
+                let start = ((source_y + row) * source_width + source_x) as usize;
+                let destination_row = (rect.y + row) as usize * self.width as usize;
+                unsafe {
+                    core::ptr::copy_nonoverlapping(
+                        source.as_ptr().add(start),
+                        self.pixels.add(destination_row + rect.x as usize),
+                        rect.w as usize,
+                    );
+                }
+            }
+        } else {
+            for row in 0..rect.h {
+                for col in 0..rect.w {
+                    let value = source[((source_y + row) * source_width + source_x + col) as usize];
+                    self.put(rect.x + col, rect.y + row, Color(value));
+                }
+            }
+        }
+    }
 }
 
 /// Build a soft drop shadow mask for a rounded rectangle. The mask is

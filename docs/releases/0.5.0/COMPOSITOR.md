@@ -28,19 +28,31 @@ they draw through `Surface` into a rect supplied by the window manager.
   rectangle from `from`/`to` and an opacity from 1→0 or 0→1.
 - Shadows are generated masks cached per window size. Quality mode selects
   blur radius and margin; shadows can be disabled.
-- The window surface is filled, title bar and traffic lights are drawn, then the
-  app content is clipped to the content rect and drawn.
-- Corners are cut by saving the underlying pixels and restoring them outside
-  the radius, preventing app content from squaring the silhouette.
-- A global surface opacity is active during the window draw, producing real
-  content fade without a second buffer.
+- Every window owns a content-sized `Vec<u32>` surface. The app draws into it in
+  local coordinates `(0,0,w,h)`; the compositor blits the buffer at the content
+  rect. Moving a window is blit-only and does not re-render the app.
+- A surface is valid until its size changes, the app receives input, the theme
+  signature changes, or the 500 ms blink tick fires. Only invalid surfaces are
+  re-rasterized; valid ones are blitted from cache.
+- The window frame is filled, title bar and traffic lights are drawn, then the
+  cached content is blitted. Corners are cut by saving the underlying pixels and
+  restoring them outside the radius.
+- A global surface opacity is active during the window draw, so both chrome and
+  cached content fade with the same multiplier.
 
 ## 4. Partial compositing
 
 The compositor sets the clip to each dirty rectangle and redraws every layer
 that intersects it. `wm.draw` skips windows outside the clip, including their
-app draw calls. Wallpaper is restored from the cached image first, which erases
-old window, cursor and overlay pixels.
+blits. Wallpaper is restored from the cached image first, which erases old
+window, cursor and overlay pixels.
+
+Window damage is tracked at surface granularity: a window's content buffer has a
+valid flag and a cached size. Invalid windows are redrawn once into their buffer
+and contribute one dirty rect; valid windows only blit. Input, a size change, a
+theme-signature change or the 500 ms caret blink mark a surface invalid. There is
+no app-internal damage API yet, so any invalidation re-rasterizes the whole window
+content.
 
 When the whole screen needs repainting (workspace slide, launcher, overview
 opening), a single full-screen region is used. This is explicit and counted in
@@ -49,12 +61,13 @@ opening), a single full-screen region is used. This is explicit and counted in
 ## 5. Transparency and blur
 
 - Alpha compositing is per primitive and supports a whole-surface multiplier.
-- Glass panels (`glass`) sample the precomputed blurred wallpaper, not the live
-  content behind them. This is honest "frosted wallpaper", not a real backdrop
-  blur.
-- The Blur switch disables that sampling and falls back to a solid translucent
-  or opaque panel.
-- There is no GPU blur, no mip chain and no per-frame large blur pass.
+- Glass panels (`glass_live`) sample the composited backbuffer, downsample it,
+  run two box-blur passes and tint the result. This is a real backdrop blur over
+  wallpaper and window content; see DESIGN_SYSTEM.md 6.3.
+- The Blur switch disables sampling and falls back to the material tint (or the
+  opaque surface when Reduce Transparency is on).
+- There is no GPU blur, no mip chain and no full-screen blur pass. Blur cost is
+  proportional to the panel area and quality mode.
 
 ## 6. Effects quality
 

@@ -95,6 +95,11 @@ pub struct Window {
     pub shadow: Vec<u8>,
     pub shadow_size: (i32, i32),
     pub title: String,
+    /// Cached window content in local coordinates. Sized to the content rect,
+    /// valid until the app, theme or content size changes.
+    pub surface: Vec<u32>,
+    pub surface_valid: bool,
+    pub surface_size: (i32, i32),
 }
 
 impl Window {
@@ -191,6 +196,8 @@ pub struct WindowManager {
     animation_speed: f32,
     reduce_motion: bool,
     window_animations: bool,
+    last_blink: u64,
+    last_content_signature: u64,
 }
 
 impl WindowManager {
@@ -220,6 +227,8 @@ impl WindowManager {
             animation_speed: 1.0,
             reduce_motion: false,
             window_animations: true,
+            last_blink: 0,
+            last_content_signature: 0,
         }
     }
 
@@ -337,6 +346,9 @@ impl WindowManager {
             shadow: Vec::new(),
             shadow_size: (0, 0),
             title: String::new(),
+            surface: Vec::new(),
+            surface_valid: false,
+            surface_size: (0, 0),
         };
         self.windows.push(window);
         self.focus = Some(id);
@@ -749,6 +761,21 @@ impl WindowManager {
         self.reduce_motion = theme.reduce_motion;
         self.window_animations = theme.window_animations;
         let now = sys::time_ms();
+
+        // App content is cached. Text carets and status widgets animate from
+        // time, so refresh every window twice a second. A theme change
+        // invalidates every surface immediately.
+        let blink = now / 500;
+        let signature = theme.content_signature();
+        let theme_changed = signature != self.last_content_signature;
+        if blink != self.last_blink || theme_changed {
+            self.last_blink = blink;
+            self.last_content_signature = signature;
+            for window in &mut self.windows {
+                window.surface_valid = false;
+            }
+        }
+
         self.removed_regions.clear();
         for index in 0..self.windows.len() {
             self.windows[index].app.tick(theme);
@@ -821,12 +848,15 @@ impl WindowManager {
     }
 
     /// Rectangles that changed since the last frame because of a window
-    /// transition, drag or focus shadow.
+    /// transition, drag, focus shadow or invalidated content.
     pub fn animation_regions(&self, now: u64) -> Vec<Rect> {
         let mut regions = Vec::new();
         for window in &self.windows {
             if window.desktop != self.desktop {
                 continue;
+            }
+            if !window.surface_valid && !window.state.is_closed() {
+                regions.push(window.current_rect(now).inset(-2));
             }
             if let Some(transition) = window.transition {
                 if now.saturating_sub(transition.start) < transition.duration {
@@ -921,10 +951,11 @@ impl WindowManager {
 
             if window.fullscreen {
                 let opacity = window.current_opacity(now);
-                let previous_opacity = surface.set_opacity((opacity * 255.0) as u8);
                 let content = rect;
+                ensure_window_content(window, content.w, content.h, theme, surface.format);
+                let previous_opacity = surface.set_opacity((opacity * 255.0) as u8);
                 let previous_clip = surface.set_clip(content.intersect(clip));
-                window.app.draw(surface, content, theme);
+                surface.blit_window(&window.surface, content.w, content);
                 surface.set_clip(previous_clip);
                 surface.set_opacity(previous_opacity);
                 continue;
@@ -1071,8 +1102,9 @@ impl WindowManager {
             }
 
             let content = Rect::new(rect.x, rect.y + TITLE_HEIGHT, rect.w, rect.h - TITLE_HEIGHT);
+            ensure_window_content(window, content.w, content.h, theme, surface.format);
             let previous = surface.set_clip(content.intersect(clip));
-            window.app.draw(surface, content, theme);
+            surface.blit_window(&window.surface, content.w, content);
             surface.set_clip(previous);
 
             if corner_radius > 0 {
@@ -1188,6 +1220,7 @@ impl WindowManager {
             if let Some(action) = window.app.mouse(x, y, rect, theme) {
                 actions.push(action);
             }
+            window.surface_valid = false;
             return actions;
         }
 
@@ -1238,6 +1271,7 @@ impl WindowManager {
         if let Some(action) = window.app.mouse(x, y, content, theme) {
             actions.push(action);
         }
+        window.surface_valid = false;
         actions
     }
 
@@ -1369,6 +1403,7 @@ impl WindowManager {
             if let Some(action) = window.app.key(event, theme) {
                 actions.push(action);
             }
+            window.surface_valid = false;
         }
         actions
     }
@@ -1485,4 +1520,39 @@ fn default_size(kind: AppKind) -> (i32, i32) {
         AppKind::Photos => (740, 520),
         AppKind::Network => (860, 560),
     }
+}
+
+/// Refresh a window's cached content surface when it is invalid. The app is
+/// drawn in local coordinates (0,0..w,h); the compositor blits the buffer at
+/// the window's content position, so moving a window needs no re-render.
+fn ensure_window_content(window: &mut Window, width: i32, height: i32, theme: &Theme, format: u32) {
+    let width = width.max(1);
+    let height = height.max(1);
+    let length = (width * height) as usize;
+    if window.surface.len() < length {
+        window.surface.resize(length, 0);
+    }
+    if window.surface_valid && window.surface_size == (width, height) {
+        return;
+    }
+    let content = Rect::new(0, 0, width, height);
+    {
+        let Window {
+            surface: buffer,
+            app,
+            ..
+        } = window;
+        let mut offscreen = Surface {
+            width,
+            height,
+            pixels: buffer.as_mut_ptr(),
+            clip: content,
+            format,
+            opacity: 255,
+        };
+        offscreen.fill_rect(content, theme.palette().surface);
+        app.draw(&mut offscreen, content, theme);
+    }
+    window.surface_valid = true;
+    window.surface_size = (width, height);
 }

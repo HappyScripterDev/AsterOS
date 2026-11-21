@@ -109,3 +109,14 @@ Date: 2026-11-21
 - Added a clickable top-bar workspace pager and live Alt-Tab window thumbnails.
 - Documented the shipped glass recipe, fullscreen behaviour and shortcuts in the
   design system, desktop spec and interaction spec.
+
+## Extension: graphics engine phase 2 (2026-11-21)
+
+- Added per-window content surfaces with local-coordinate rendering and cached
+  composition. Window moves are blit-only; input, resize, theme and caret ticks
+  invalidate the cached content.
+- Added `gfx::blit_window` with an opaque row-copy fast path and a fading alpha
+  path.
+- Window content damage is tracked per surface, and invalid windows contribute a
+  single dirty rectangle to the compositor.
+- Updated the compositor and limitations documentation for the new model.

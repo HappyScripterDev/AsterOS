@@ -182,6 +182,21 @@ pub struct Theme {
 }
 
 impl Theme {
+    /// Cheap hash of the fields that change app-rendered content. The window
+    /// manager uses it to invalidate cached window surfaces when the palette,
+    /// accent or motion settings change.
+    pub fn content_signature(&self) -> u64 {
+        let mut hash = self.accent_index as u64;
+        hash = hash.wrapping_mul(31) ^ self.wallpaper as u64;
+        hash = hash.wrapping_mul(31) ^ self.reduce_motion as u64;
+        hash = hash.wrapping_mul(31) ^ self.smooth_scrolling as u64;
+        hash = hash.wrapping_mul(31) ^ self.transparency as u64;
+        hash = hash.wrapping_mul(31) ^ self.quality as u64;
+        hash
+    }
+}
+
+impl Theme {
     pub fn palette(&self) -> Palette {
         LIGHT
     }

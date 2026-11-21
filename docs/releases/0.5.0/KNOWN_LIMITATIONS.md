@@ -16,8 +16,10 @@ This is the honest list of what 0.5.0 does not do or does with weaker guarantees
   merged and capped; a busy frame above 62% area becomes a full redraw.
 - **Window shadows are cached masks.** Quality changes require a mask rebuild;
   during a resize the mask is regenerated for the new size.
-- **No damage tracking inside an app.** A window is repainted as a whole (clipped
-  to the dirty region), not by app-internal dirty rectangles.
+- **Window content damage is whole-window.** Each window owns a content-sized
+  offscreen surface and is re-rasterized only when invalid (input, resize, theme
+  change or the 500 ms caret tick). There is no app-internal damage API yet, so
+  a single changed character repaints the whole window content once.
 - **Overview captures previews at open time.** They are real pixels from the
   backbuffer, but minimized windows show an app icon rather than a live preview.
 - **Fullscreen is one window at a time.** Focusing another window restores the
