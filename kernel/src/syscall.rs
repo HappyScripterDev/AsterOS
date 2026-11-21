@@ -99,6 +99,7 @@ pub fn handle(frame: &mut InterruptFrame) {
             code => error(code),
         },
         sys::POWER => power(args[0]),
+        sys::DEVICES => devices(pml4, args[0], args[1] as usize),
         _ => error(errno::ENOSYS),
     };
     frame.rax = result;
@@ -698,6 +699,25 @@ fn sync_storage() -> u64 {
 fn shutdown() -> u64 {
     crate::info!("shutdown requested by user space (legacy syscall)");
     crate::arch::acpi::power(0);
+}
+
+fn devices(pml4: u64, out: u64, max: usize) -> u64 {
+    let max = max.min(32);
+    if max == 0 || out == 0 {
+        return error(errno::EINVAL);
+    }
+    let mut list = [aster_abi::DeviceInfo::EMPTY; 32];
+    let count = crate::drivers::pci::enumerate(&mut list).min(max);
+    let bytes = unsafe {
+        core::slice::from_raw_parts(
+            list.as_ptr() as *const u8,
+            count * core::mem::size_of::<aster_abi::DeviceInfo>(),
+        )
+    };
+    if vmm::copy_to_user(pml4, out, bytes).is_err() {
+        return error(errno::EINVAL);
+    }
+    count as u64
 }
 
 fn power(mode: u64) -> u64 {
