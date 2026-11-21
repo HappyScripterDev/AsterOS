@@ -57,8 +57,9 @@ Rules:
 - The 64 px dock is the background container. A magnified 40 px icon (max 62 px) may
   extend up to 10 px above the container, but never above y=718.
 - Desktop has no icons in v1. Files is the only file browser entry point.
-- There is no fullscreen mode. Maximized means the work area, with the top bar and dock
-  still visible.
+- Fullscreen exists as a distinct state: the window covers (0, 0, W, H), the top bar
+  and dock are hidden while it is focused, and its app content receives the entire
+  screen. Maximize still means the work area with chrome visible.
 
 ---
 
@@ -145,9 +146,11 @@ the app's name and the app's menu titles appear.
 - Clicking the bell toggles the notification center; clicking the control center icon
   toggles the control center. Opening one closes the other and the launcher.
 - Clock is not interactive; hover tooltip is the only affordance.
-- The pager is an indicator, not a control. It has no hit target. Desktop switching is
-  keyboard only (Ctrl+Alt+Left/Right) in v1.
-- The top bar never auto-hides. No fullscreen window may cover it.
+- The pager is both an indicator and a control: each mark has a 16 x 16 hit target,
+  clicks jump to that desktop, and the active mark grows to 12 x 4. Desktop switching
+  also works with Ctrl+Left/Right.
+- The top bar never auto-hides, but a fullscreen window covers it by design. Escape,
+  Meta+F or F11 exits fullscreen.
 - If a menu is open and the user clicks the desktop, the menu closes and the click is
   consumed.
 
@@ -159,11 +162,11 @@ Browser, Update, Installer).
 
 Shared items:
 
-- File: New Window (multi-instance apps only), Close Window (Super+Q), Quit App.
+- File: New Window (multi-instance apps only), Close Window (Ctrl+W), Quit App.
 - Edit: Undo, Redo, Cut, Copy, Paste, Select All. Only present for apps with text.
 - View: app-specific, no zoom controls in v1.
-- Window: Minimize (Super+M), Maximize/Restore (Super+Up), Snap Left (Super+Left),
-  Snap Right (Super+Right), separator, Close (Super+Q).
+- Window: Minimize (Ctrl+M), Zoom, Enter/Exit Fullscreen (Meta+F or F11),
+  Next Window (Ctrl+Tab), separator, Close (Ctrl+W).
 - Help: About <App> (modal).
 
 Disabled items use 38% alpha and do not open. Menu items never say "coming soon".
@@ -426,8 +429,9 @@ Behavior:
 
 - Four desktops, fixed, no dynamic add/remove.
 - Each desktop owns a window list and a z-order. Wallpaper and chrome are shared.
-- Ctrl+Alt+Left / Ctrl+Alt+Right switch. Clamp at desktop 1 and 4: no wrap, no bounce.
-  At an end, the pager pulses once (120 ms) with no other effect.
+- Ctrl+Left / Ctrl+Right switch. Clicking a top-bar pager mark jumps directly. Clamp at
+  desktop 1 and 4: no wrap, no bounce. At an end, the pager pulses once (120 ms) with no
+  other effect.
 - Transition: outgoing windows translate -48 px and fade to 0.25; incoming windows
   translate from +48 px to 0 and fade to 1. 320 ms standard. Top bar and dock do not
   move. Direction reverses for Right.
@@ -435,10 +439,11 @@ Behavior:
 - New windows open on the current desktop.
 - Dock click finds the app's most recent window on any desktop and switches to that
   desktop before focusing.
-- No overview, no desktop grid, no drag-window-to-desktop in v1. Ctrl+Alt+Shift+arrows
-  is not implemented.
-- The pager shows four marks: active 12 x 4 accent pill, inactive 4 x 4
-  `text-secondary` at 55% alpha, 6 px gaps, total 42 px.
+- Window Overview (F3 or Ctrl+Up) shows every window on the current desktop as a live
+  card; arrows select, Enter focuses, Escape closes, clicking a card focuses it.
+- The pager is centred on the top bar: marks are 14 px apart, active 12 x 4 accent pill,
+  inactive 7 x 4 at 60/255 black. Its hit targets are 16 x 16.
+- Drag-window-to-desktop and desktop reordering are not implemented in v0.5.
 
 ---
 

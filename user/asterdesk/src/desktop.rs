@@ -23,6 +23,8 @@ use crate::apps::{Action, App, AppKind};
 use crate::font_data::{BODY, BODY_MEDIUM, CAPTION, HEADLINE, SMALL, TITLE};
 
 use crate::gfx::{self, Color, FloatMath, Rect, Surface};
+use crate::glass;
+use crate::material::{self, Material};
 
 use crate::logo_data;
 
@@ -81,6 +83,7 @@ struct OverviewItem {
     kind: AppKind,
     desktop: usize,
     minimized: bool,
+    fullscreen: bool,
     rect: Rect,
     pixels: Vec<u32>,
     source_width: i32,
@@ -104,6 +107,8 @@ struct SwitcherItem {
     kind: AppKind,
     desktop: usize,
     minimized: bool,
+    fullscreen: bool,
+    preview: Vec<u32>,
 }
 
 struct Switcher {
@@ -140,6 +145,8 @@ enum MenuAction {
     Minimize,
 
     Zoom,
+
+    Fullscreen,
 
     NextWindow,
 
@@ -315,6 +322,10 @@ pub struct Desktop {
     menu_started: u64,
 
     menu_fade: Option<(MenuKind, u64)>,
+
+    glass_small: Vec<u32>,
+
+    glass_scratch: Vec<u32>,
 }
 
 impl Desktop {
@@ -439,6 +450,10 @@ impl Desktop {
             menu_started: 0,
 
             menu_fade: None,
+
+            glass_small: vec![0u32; ((width * height / 4).max(4096)) as usize],
+
+            glass_scratch: vec![0u32; ((width * height / 4).max(4096)) as usize],
         };
 
         desktop.services.start();
@@ -910,6 +925,7 @@ impl Desktop {
             self.update_clock(false);
             self.update_dock_visibility();
             self.wm.set_dock_anchors(self.dock_anchors());
+            self.wm.set_screen(Rect::new(0, 0, self.width, self.height));
             self.wm.tick(&self.theme);
             self.services.tick();
 
@@ -1142,6 +1158,15 @@ impl Desktop {
                 ));
             }
 
+            if now.saturating_sub(self.last_workspace_switch) <= 1100 {
+                self.dirty.add(Rect::new(
+                    self.width / 2 - 40,
+                    self.dock_rect().y - 34,
+                    80,
+                    28,
+                ));
+            }
+
             if self.clock_text != self.last_clock_text {
                 self.dirty.add(Rect::new(0, 0, self.width, TOP_BAR_HEIGHT));
             }
@@ -1276,9 +1301,12 @@ impl Desktop {
             if full && self.launcher.is_some() {
                 self.draw_launcher();
             }
-            self.draw_dock();
-            self.draw_top_bar();
-            if self.control_center {
+            if !self.wm.fullscreen_active() {
+                self.draw_dock();
+                self.draw_top_bar();
+                self.draw_workspace_indicator();
+            }
+            if self.control_center && !self.wm.fullscreen_active() {
                 self.draw_control_center();
             }
             if self.notif_panel {
@@ -1291,7 +1319,6 @@ impl Desktop {
             if !self.notifications.is_empty() && self.launcher.is_none() {
                 self.draw_toasts();
             }
-            self.draw_workspace_indicator();
             if self.overview.is_some() {
                 self.draw_overview(now);
             }
@@ -1447,7 +1474,7 @@ impl Desktop {
         self.switcher = None;
         let now = sys::time_ms();
         let mut items = Vec::new();
-        for (id, title, kind, desktop, minimized, normal) in self.wm.overview_items() {
+        for (id, title, kind, desktop, minimized, fullscreen, normal) in self.wm.overview_items() {
             let rect = if minimized {
                 normal
             } else {
@@ -1467,6 +1494,7 @@ impl Desktop {
                 kind,
                 desktop,
                 minimized,
+                fullscreen,
                 rect,
                 pixels,
                 source_width,
@@ -1609,6 +1637,7 @@ impl Desktop {
             Color::rgba(22, 23, 26, 255),
         );
         self.surface.set_opacity(255);
+
         self.surface.draw_text_centered(
             Rect::new(0, TOP_BAR_HEIGHT + 8, self.width, 30),
             TOP_BAR_HEIGHT + 8,
@@ -1664,7 +1693,13 @@ impl Desktop {
             );
             let label = format!(
                 "{}{}  -  Desktop {}",
-                if item.minimized { "[Minimized] " } else { "" },
+                if item.minimized {
+                    "[Minimized] "
+                } else if item.fullscreen {
+                    "[Fullscreen] "
+                } else {
+                    ""
+                },
                 item.title,
                 item.desktop + 1
             );
@@ -1691,13 +1726,26 @@ impl Desktop {
     fn open_switcher(&mut self) {
         let now = sys::time_ms();
         let mut items = Vec::new();
-        for (id, title, kind, desktop, minimized, _) in self.wm.overview_items() {
+        for (id, title, kind, desktop, minimized, fullscreen, normal) in self.wm.overview_items() {
+            let mut preview = Vec::new();
+            if !minimized {
+                let rect = self.wm.window_rect(id, now).unwrap_or(normal);
+                if let Some((pixels, width, height)) = self.surface.copy_region(rect) {
+                    let thumb_w = 70;
+                    let thumb_h = 48;
+                    let mut scaled = vec![0u32; (thumb_w * thumb_h) as usize];
+                    gfx::upscale_nearest(&pixels, width, height, &mut scaled, thumb_w, thumb_h);
+                    preview = scaled;
+                }
+            }
             items.push(SwitcherItem {
                 id,
                 title,
                 kind,
                 desktop,
                 minimized,
+                fullscreen,
+                preview,
             });
         }
         if items.is_empty() {
@@ -1794,12 +1842,20 @@ impl Desktop {
                 self.surface
                     .stroke_rounded(cell, 12, 2, self.theme.accent_color());
             }
-            ui::draw_app_icon(
-                &mut self.surface,
-                item.kind.icon(),
-                Rect::new(cell.x + 16, cell.y + 10, 48, 48),
-                &self.theme,
-            );
+            if !item.preview.is_empty() {
+                let preview = Rect::new(cell.x + 5, cell.y + 7, 70, 48);
+                self.surface
+                    .blit_alpha(preview.x, preview.y, preview.w, preview.h, &item.preview);
+                self.surface
+                    .stroke_rounded(preview, 4, 1, Color::rgba(0, 0, 0, 30));
+            } else {
+                ui::draw_app_icon(
+                    &mut self.surface,
+                    item.kind.icon(),
+                    Rect::new(cell.x + 16, cell.y + 10, 48, 48),
+                    &self.theme,
+                );
+            }
             ui::draw_text_truncated(
                 &mut self.surface,
                 cell.x + 6,
@@ -1815,7 +1871,12 @@ impl Desktop {
             self.surface.draw_text_centered(
                 Rect::new(panel.x, panel.bottom() - 44, panel.w, 20),
                 panel.bottom() - 44,
-                &format!("{}  -  Desktop {}", item.title, item.desktop + 1),
+                &format!(
+                    "{}{}  -  Desktop {}",
+                    if item.fullscreen { "[Fullscreen] " } else { "" },
+                    item.title,
+                    item.desktop + 1
+                ),
                 BODY_MEDIUM,
                 self.theme.palette().text,
             );
@@ -1916,6 +1977,19 @@ impl Desktop {
         let ctrl = event.mods & mods::CTRL != 0;
         let alt = event.mods & mods::ALT != 0;
 
+        if alt && event.code == aster_abi::keys::TAB {
+            if self.switcher.is_some() {
+                self.advance_switcher();
+            } else {
+                // Alt-Tab outranks a fading overview: replace it immediately
+                // instead of swallowing the shortcut until the fade ends.
+                self.overview = None;
+                self.needs_full = true;
+                self.open_switcher();
+            }
+            return;
+        }
+
         if self.overview.is_some() {
             match event.code {
                 aster_abi::keys::ESC => self.close_overview(),
@@ -1945,11 +2019,21 @@ impl Desktop {
             return;
         }
 
-        if alt && event.code == aster_abi::keys::TAB {
-            if self.switcher.is_none() {
-                self.open_switcher();
-            } else {
-                self.advance_switcher();
+        if event.code == aster_abi::keys::ESC && self.wm.fullscreen_active() {
+            if let Some(id) = self.wm.focus {
+                self.wm.toggle_fullscreen(id);
+                self.needs_full = true;
+            }
+            return;
+        }
+
+        if (event.code == aster_abi::keys::F11)
+            || ((event.mods & mods::META != 0) && event.code == b'f' as u32)
+            || (ctrl && (event.mods & mods::ALT != 0) && event.code == b'f' as u32)
+        {
+            if let Some(id) = self.wm.focus {
+                self.wm.toggle_fullscreen(id);
+                self.needs_full = true;
             }
             return;
         }
@@ -2013,7 +2097,6 @@ impl Desktop {
             if let Some(kind) = chosen {
                 self.launch(kind);
             }
-
             return;
         }
 
@@ -2248,7 +2331,7 @@ impl Desktop {
     }
 
     fn top_bar_click(&mut self, x: i32, y: i32) {
-        if !(0..TOP_BAR_HEIGHT).contains(&y) {
+        if !(0..TOP_BAR_HEIGHT).contains(&y) || self.wm.fullscreen_active() {
             return;
         }
 
@@ -2267,6 +2350,16 @@ impl Desktop {
         }
 
         let clock_x = self.clock_x();
+
+        let pager_center = self.width / 2;
+        let pager_start = pager_center - (self.wm.desktop_count as i32 - 1) * 7;
+        for index in 0..self.wm.desktop_count {
+            let rect = Rect::new(pager_start + index as i32 * 14 - 8, 5, 16, 16);
+            if rect.contains(x, y) {
+                self.begin_workspace_jump(index);
+                return;
+            }
+        }
 
         if x >= clock_x - 8 {
             self.notif_panel = !self.notif_panel;
@@ -2371,6 +2464,13 @@ impl Desktop {
 
                 }
 
+            }
+
+            MenuAction::Fullscreen => {
+                if let Some(id) = self.wm.focus {
+                    self.wm.toggle_fullscreen(id);
+                    self.needs_full = true;
+                }
             }
 
             MenuAction::NextWindow => self.wm.cycle_focus(),
@@ -2639,6 +2739,12 @@ impl Desktop {
             .map(|window| window.maximized)
             .unwrap_or(false);
 
+        let fullscreen = self
+            .wm
+            .focused()
+            .map(|window| window.fullscreen)
+            .unwrap_or(false);
+
         match kind {
             MenuKind::App => vec![
                 MenuItem::item("About Aster OS", "", MenuAction::About, false),
@@ -2691,6 +2797,16 @@ impl Desktop {
             MenuKind::Window => vec![
                 MenuItem::item("Minimize", "Ctrl M", MenuAction::Minimize, !has_window),
                 MenuItem::item("Zoom", "", MenuAction::Zoom, !has_window),
+                MenuItem::item(
+                    if fullscreen {
+                        "Exit Fullscreen"
+                    } else {
+                        "Enter Fullscreen"
+                    },
+                    "Meta F",
+                    MenuAction::Fullscreen,
+                    !has_window,
+                ),
                 MenuItem::item("Next Window", "Ctrl Tab", MenuAction::NextWindow, false),
                 MenuItem::separator(),
                 MenuItem {
@@ -2810,20 +2926,60 @@ impl Desktop {
 
     // -----------------------------------------------------------------
 
-    fn draw_panel(&mut self, rect: Rect, radius: i32, tint: Color, strength: f32) {
-        if self.theme.transparency && self.theme.blur {
-            self.surface
-                .glass(rect, radius, tint, &self.blurred, strength);
+    fn effective_quality(&self) -> QualityMode {
+        if self.theme.quality == QualityMode::Adaptive.code() {
+            if self.stats.average_frame_ms > 26.0 {
+                QualityMode::Performance
+            } else {
+                QualityMode::Balanced
+            }
         } else {
-            self.surface.fill_rounded(
+            QualityMode::from_code(self.theme.quality)
+        }
+    }
+
+    fn draw_panel(&mut self, rect: Rect, radius: i32, material: Material) {
+        let quality = self.effective_quality();
+        if !self.theme.transparency {
+            self.surface
+                .fill_rounded(rect, radius, self.theme.palette().surface);
+            self.surface
+                .stroke_rounded(rect, radius, 1, material.border);
+            return;
+        }
+        if self.theme.blur {
+            let quality_ds = match quality {
+                QualityMode::Performance => 1,
+                QualityMode::Quality => 0,
+                _ => 1,
+            };
+            let quality_radius = match quality {
+                QualityMode::Performance => -1,
+                QualityMode::Quality => 1,
+                _ => 0,
+            };
+            glass::glass_live(
+                &mut self.surface,
                 rect,
                 radius,
-                if self.theme.transparency {
-                    tint.with_alpha(245)
-                } else {
-                    self.theme.palette().surface
-                },
+                material.tint,
+                (material.blur_radius + quality_radius).max(1),
+                (material.downsample + quality_ds).clamp(1, 8),
+                material.saturation,
+                material.noise,
+                &mut self.glass_small,
+                &mut self.glass_scratch,
             );
+        } else {
+            self.surface.fill_rounded(rect, radius, material.tint);
+            self.surface
+                .stroke_rounded(rect, radius, 1, material.border);
+            if radius > 0 {
+                self.surface.fill_rect(
+                    Rect::new(rect.x + radius, rect.y, rect.w - radius * 2, 1),
+                    material.highlight,
+                );
+            }
         }
     }
 
@@ -2832,7 +2988,7 @@ impl Desktop {
 
         let bar = Rect::new(0, 0, self.width, TOP_BAR_HEIGHT);
 
-        self.draw_panel(bar, 0, self.theme.palette().menu_bar, 1.0);
+        self.draw_panel(bar, 0, material::CHROME);
 
         self.surface.fill_rect(
             Rect::new(0, TOP_BAR_HEIGHT - 1, self.width, 1),
@@ -2879,6 +3035,28 @@ impl Desktop {
         }
 
         let clock_x = self.clock_x();
+
+        let pager_center = self.width / 2;
+        let pager_start = pager_center - (self.wm.desktop_count as i32 - 1) * 7;
+        for index in 0..self.wm.desktop_count {
+            let active = index == self.wm.desktop;
+            let width = if active { 12 } else { 7 };
+            let rect = Rect::new(
+                pager_start + index as i32 * 14 - width / 2,
+                TOP_BAR_HEIGHT / 2 - 2,
+                width,
+                4,
+            );
+            self.surface.fill_rounded(
+                rect,
+                2,
+                if active {
+                    self.theme.accent_color()
+                } else {
+                    Color::rgba(0, 0, 0, 60)
+                },
+            );
+        }
 
         let control_x = clock_x - 56;
 
@@ -2981,20 +3159,7 @@ impl Desktop {
             );
         }
 
-        if self.theme.transparency && self.theme.blur {
-            self.surface
-                .glass(dock, 20, palette.menu_bar, &self.blurred, 1.25);
-        } else {
-            self.surface.fill_rounded(
-                dock,
-                20,
-                if self.theme.transparency {
-                    palette.menu_bar.with_alpha(235)
-                } else {
-                    palette.surface
-                },
-            );
-        }
+        self.draw_panel(dock, 20, material::REGULAR);
         self.surface
             .stroke_rounded(dock, 20, 1, Color::rgba(255, 255, 255, 200));
 
@@ -3075,16 +3240,6 @@ impl Desktop {
     }
 
     fn draw_launcher(&mut self) {
-        if self.theme.transparency && self.theme.blur {
-            unsafe {
-                core::ptr::copy_nonoverlapping(
-                    self.blurred.as_ptr(),
-                    self.surface.pixels,
-                    (self.width * self.height) as usize,
-                );
-            }
-        }
-
         self.surface.fill_rect(
             Rect::new(0, 0, self.width, self.height),
             Color::rgba(0, 0, 0, 36),
@@ -3098,7 +3253,7 @@ impl Desktop {
             Color::rgba(0, 0, 0, 26),
         );
 
-        self.draw_panel(panel, 18, self.theme.palette().menu_bar, 1.55);
+        self.draw_panel(panel, 18, material::THICK);
 
         self.surface
             .stroke_rounded(panel, 18, 1, Color::rgba(255, 255, 255, 190));
@@ -3238,16 +3393,7 @@ impl Desktop {
 
         let palette = self.theme.palette();
 
-        self.surface.glass(
-            panel,
-            18,
-            self.theme.palette().menu_bar,
-            &self.blurred,
-            1.55,
-        );
-
-        self.surface
-            .stroke_rounded(panel, 18, 1, Color::rgba(255, 255, 255, 190));
+        self.draw_panel(panel, 18, material::PANEL);
 
         self.surface.draw_text(
             panel.x + 18,
@@ -3526,7 +3672,7 @@ impl Desktop {
             16,
             Color::rgba(0, 0, 0, 22),
         );
-        self.draw_panel(panel, 16, self.theme.palette().menu_bar, 1.55);
+        self.draw_panel(panel, 16, material::PANEL);
         self.surface
             .stroke_rounded(panel, 16, 1, Color::rgba(255, 255, 255, 190));
         self.surface.draw_text(
@@ -3633,14 +3779,24 @@ impl Desktop {
             let previous_opacity = self.surface.set_opacity((alpha * 255.0) as u8);
 
             if self.theme.transparency && self.theme.blur {
-                self.surface
-                    .glass(card, 16, self.theme.palette().menu_bar, &self.blurred, 1.55);
+                glass::glass_live(
+                    &mut self.surface,
+                    card,
+                    16,
+                    material::REGULAR.tint,
+                    material::REGULAR.blur_radius,
+                    material::REGULAR.downsample,
+                    material::REGULAR.saturation,
+                    material::REGULAR.noise,
+                    &mut self.glass_small,
+                    &mut self.glass_scratch,
+                );
             } else {
                 self.surface.fill_rounded(
                     card,
                     16,
                     if self.theme.transparency {
-                        self.theme.palette().menu_bar.with_alpha(245)
+                        material::REGULAR.tint
                     } else {
                         self.theme.palette().surface
                     },

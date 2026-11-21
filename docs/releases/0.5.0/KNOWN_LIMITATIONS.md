@@ -8,9 +8,10 @@ This is the honest list of what 0.5.0 does not do or does with weaker guarantees
   acceleration. Monitor shows "software renderer"; no GPU percentage is shown.
 - **No vsync, triple buffering or refresh-rate detection.** Frame pacing is a
   millisecond budget. QEMU GOP exposes no vsync signal.
-- **Blur is wallpaper blur.** Glass panels sample a precomputed blurred wallpaper,
-  not the live pixels behind the panel. Turning Blur off uses a solid fallback.
-- **No live backdrop blur, depth-of-field or large blur passes.**
+- **Glass blur is live but software.** Panels sample the composited backbuffer,
+  downsample it and run two integer box-blur passes before tinting. There is no
+  gaussian blur, no GPU blur and no blur of the full screen; quality modes reduce
+  the downsample/radius. Large panels cost more than the wallpaper-only fallback.
 - **Dirty regions are compositor rectangles, not arbitrary regions.** They are
   merged and capped; a busy frame above 62% area becomes a full redraw.
 - **Window shadows are cached masks.** Quality changes require a mask rebuild;
@@ -19,6 +20,9 @@ This is the honest list of what 0.5.0 does not do or does with weaker guarantees
   to the dirty region), not by app-internal dirty rectangles.
 - **Overview captures previews at open time.** They are real pixels from the
   backbuffer, but minimized windows show an app icon rather than a live preview.
+- **Fullscreen is one window at a time.** Focusing another window restores the
+  fullscreen window to its previous rectangle; there is no separate fullscreen
+  space or multi-monitor fullscreen.
 
 ## Motion and UI
 
@@ -33,7 +37,8 @@ This is the honest list of what 0.5.0 does not do or does with weaker guarantees
   events, so mouse-wheel scrolling is not available.
 - The Overview shows the current window set at open; newly opened windows while
   the overview is visible are not added until it is reopened.
-- The quick switcher uses app icons and titles; it does not render live thumbnails.
+- The quick switcher renders a live thumbnail captured at open; thumbnails do not
+  refresh while Alt is held.
 - No live animation preview outside Settings; the preview card is a small moving
   rectangle, not a full desktop demo.
 

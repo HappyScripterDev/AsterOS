@@ -22,6 +22,7 @@ struct State {
     shift: bool,
     ctrl: bool,
     alt: bool,
+    meta: bool,
     caps: bool,
     extended: bool,
     mouse_cycle: u8,
@@ -35,6 +36,7 @@ static STATE: IrqLock<State> = IrqLock::new(State {
     shift: false,
     ctrl: false,
     alt: false,
+    meta: false,
     caps: false,
     extended: false,
     mouse_cycle: 0,
@@ -199,6 +201,9 @@ fn push_key(code: u32, pressed: bool, state: &State) {
     if state.alt {
         event.mods |= mods::ALT;
     }
+    if state.meta {
+        event.mods |= mods::META;
+    }
     if state.caps {
         event.mods |= mods::CAPS;
     }
@@ -343,6 +348,12 @@ fn handle_key(scancode: u8) {
         } else if code == 0x38 {
             state.alt = !released;
             push_key(keys::RIGHT_ALT, !released, &state);
+        } else if code == 0x5B {
+            state.meta = !released;
+            push_key(keys::LEFT_META, !released, &state);
+        } else if code == 0x5C {
+            state.meta = !released;
+            push_key(keys::RIGHT_META, !released, &state);
         } else if let Some(key) = special {
             push_key(key, !released, &state);
         }

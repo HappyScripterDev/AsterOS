@@ -8,8 +8,8 @@ platform widget toolkit. Every visual in this document must be expressible with:
 - filled rounded rectangles, strokes, circles, triangles
 - cubic or quadratic bezier paths (icons, star mark)
 - source-over alpha blending
-- sampling of the pre-blurred wallpaper buffer (glass only)
-- three translucent rounded-rect bands per shadow (no runtime gaussian blur)
+- live sampling of the composited backbuffer with a two-pass box blur (glass)
+- cached rounded-rectangle shadow masks (no per-frame gaussian blur)
 - an Inter bitmap alpha atlas rasterized at 11, 13, 15, 22 and 28 px, weights 400/500/600
 
 Rules in this file override ad-hoc values in app code. If an implementation needs a
@@ -25,7 +25,13 @@ value that is not here, add it here first.
 > - canvas `#F2F2F7`, surface `#FFFFFF`, elevated/sidebar `#F5F5F7`/`#F0F0F3`,
 >   hairline `#D9D9DE`, text `#1D1D1F`, secondary `#6E6E73`,
 >   tertiary `#9A9AA1`;
-> - glass `rgba(255,255,255,196)`, menu bar `rgba(255,255,255,214)`;
+> - glass `rgba(255,255,255,196)` and the material tokens in
+>   `user/asterdesk/src/material.rs` (ULTRA_THIN, THIN, REGULAR, THICK, CHROME,
+>   PANEL, SIDEBAR, MENU);
+> - live backdrop blur samples the composited backbuffer and is controlled by
+>   Settings > Graphics & Motion (transparency and blur toggles are honoured);
+> - top-bar workspace pager (click a dot to jump), fullscreen via Meta+F / F11 /
+>   Escape, and Alt-Tab cards with live window thumbnails;
 > - accents: Blue `#007AFF` (default), Purple `#AF52DE`, Pink `#FF2D55`,
 >   Red `#FF3B30`, Orange `#FF9500`, Yellow `#FFCC00`, Green `#34C759`,
 >   Graphite `#8E8E93`;
@@ -348,11 +354,10 @@ target 28 px or taller.
 Light comes from above, slightly forward. Shadows are broad, low-alpha and neutral. No
 shadow is pure black in light theme.
 
-Because the compositor has no runtime gaussian blur, every shadow is three concentric
-rounded rectangles drawn behind the element, outermost first. Inflation is the growth
-of the rect on each side; radius is `element radius + inflation`. The alpha values shown
-are per band; the cumulative alpha at the core is
-`1 - (1-a1)(1-a2)(1-a3)` and is only visible outside the element.
+Because the compositor renders shadows from a cached mask, every window shadow is
+generated once per size (`gfx::shadow_mask`), then composited with integer
+source-over alpha. The mask is a rounded-rectangle distance field blurred at the
+quality mode's radius; it is not regenerated per frame.
 
 Shadow color: dark `rgba(0,0,0,a)`; light `rgba(23,32,48,a)`.
 
@@ -366,8 +371,9 @@ Shadow color: dark `rgba(0,0,0,a)`; light `rgba(23,32,48,a)`.
 | `elev.4` | Focused window | 18 / 40 / 0.45 dark, 0.26 light |
 | `elev.4-inactive` | Unfocused window | 8 / 24 / 0.29 dark, 0.17 light |
 
-The canonical numbers describe intent and may be used only if a real blur is ever
-added. The band tables below are authoritative for v1.
+The canonical numbers describe the blur intent; the shipped light renderer
+realizes them with the cached mask. The band tables below are retained as the
+historical dark-theme fallback specification.
 
 **elev.1 - dark**
 
@@ -444,52 +450,63 @@ the selected fill and a 2 px accent bar on the leading edge (inside the radius).
 
 ### 6.1 Where glass is allowed
 
-Glass is only used where the backdrop is wallpaper or the pre-blurred wallpaper field:
+Live glass samples the **composited backbuffer**, so it works over the wallpaper,
+over windows and over the dimmed desktop. It is used for:
 
-- Top bar (28 px, full width).
-- Dock (64 px background; magnified icons may overflow up to 10 px above it).
-- Launcher panel, over the launcher's blurred wallpaper field.
+- Top bar, workspace pager and dock.
+- Launcher panel, Control Centre, notification panel and toasts.
+- Menus and popovers.
+- Settings cards that float above the desktop.
 
-Panels that can sit over windows (control center, notification center, menus, tooltips,
-toasts, alt-tab switcher) are opaque. This guarantees text contrast and avoids sampling
-window content, which the compositor cannot blur. Glass is never nested.
+Glass is never nested inside another glass surface. Panels that must stay
+legible over arbitrary window content use `THICK`, `PANEL` or `MENU`, whose tint
+alpha is at least 226/255. Thin materials are reserved for the top bar and dock,
+which normally sit over the wallpaper.
 
-### 6.2 Recipe
+### 6.2 Material tokens
 
-| Property | Dark | Light |
-|---|---|---|
-| Backdrop | pre-blurred wallpaper | pre-blurred wallpaper |
-| Blur | effective sigma 24 (see 6.3) | same |
-| Tint | `rgba(18,22,31,0.72)` | `rgba(255,255,255,0.68)` |
-| Saturation | +8% on the blurred buffer | same |
-| Inner highlight | 1 px inset `rgba(255,255,255,0.08)` | 1 px inset `rgba(255,255,255,0.08)` |
-| Border | 1 px `rgba(255,255,255,0.06)` | 1 px `rgba(255,255,255,0.06)` plus a 1 px outer `rgba(18,22,31,0.10)` |
-| Corner radius | component radius | component radius |
+Defined in `user/asterdesk/src/material.rs`:
 
-The light theme keeps the required white 6% border and adds a 1 px outer dark border
-because 6% white is invisible on a light wallpaper. The required dark values are
-unchanged.
+| Token | Tint (white alpha) | Blur radius | Downsample | Use |
+|---|---|---|---|---|
+| `ULTRA_THIN` | 138 | 3 | 4 | decorative chips only |
+| `THIN` | 178 | 3 | 3 | secondary chrome |
+| `REGULAR` | 205 | 3 | 3 | dock, window-adjacent cards |
+| `THICK` | 232 | 4 | 2 | launcher, modal panels |
+| `CHROME` | 218 | 2 | 4 | top bar |
+| `PANEL` | 226 | 4 | 2 | Control Centre, notifications |
+| `SIDEBAR` | 235 | 2 | 4 | sidebars |
+| `MENU` | 244 | 4 | 2 | menus |
 
-Glass samples the pre-blurred wallpaper buffer directly. Scrims or dimming layers behind
-a glass surface are not included in its sample; this keeps the recipe independent of
-overlay state.
-
-Text over glass: `color.text` on the composited tint is >= 14:1 for both themes. Never
-place `text-tertiary` on glass.
+Each token also carries a saturation multiplier, a deterministic +/-1 LSB noise
+amplitude, a 1 px inner highlight and a 1 px border. The table lists the shipped
+light-theme tints; the dark column is archived.
 
 ### 6.3 Blur pipeline
 
-Computed once when wallpaper, theme or screen size changes:
+Computed per painted panel, never for the whole screen:
 
-1. Generate the wallpaper at screen resolution (section 6.4).
-2. Downsample by 4 with a box filter: 1280 x 800 -> 320 x 200.
-3. Apply three box blurs of radius 6 at low resolution. Effective sigma is about 26
-   full-resolution pixels, in the 24-28 px target range.
-4. Increase saturation by 8%.
-5. Store as an RGBA buffer (about 256 KB) and sample bilinearly.
+1. Capture the panel rectangle from the composited backbuffer. This already
+   contains the wallpaper and every window behind the panel.
+2. Downsample by the token factor (2-4x) into a reusable scratch buffer.
+3. Run two box-blur passes, horizontal then vertical, shrinking the radius by
+   25% on the second pass.
+4. Re-sample while drawing, apply saturation, add the +/-1 LSB dither and mix
+   the token tint.
+5. Draw the rounded 1 px inner highlight and border.
 
-No per-frame blur. No blur of window content. If the buffer is not ready on the first
-frame, fill glass with the tint plus `color.surface` at 0.94 alpha and swap when ready.
+The scratch buffers (`glass_small`, `glass_scratch`) belong to `Desktop`, grow
+once and are reused for every panel, so no allocation happens inside the frame
+loop. Quality modes adjust downsample and radius: Performance reduces both,
+Balanced uses the token values and Quality raises the radius by one.
+
+`reduce_transparency` bypasses sampling entirely and fills the panel with the
+opaque surface color plus the token border. `reduce_motion` changes animation
+timing only, never the blur.
+
+Text over glass must be measured against the lightest wallpaper region behind
+the panel. `color.text` on a `THICK`/`PANEL`/`MENU` composite stays above 7:1;
+never place `text-tertiary` on `ULTRA_THIN` or `THIN`.
 
 ### 6.4 Wallpaper recipe
 
@@ -858,6 +875,11 @@ ease.standard ease.enter ease.exit
 - 12 px type is scaled from the 13 px atlas (section 3.2).
 - The atlas has no monospace face; Terminal uses a fixed-cell Inter grid (see
   APP_GUIDELINES.md).
-- No high-contrast theme, no reduce-transparency mode, no screen reader bridge in v1.
+- No high-contrast theme and no screen reader bridge in v1; reduce-transparency
+  and reduce-motion are real Settings > Graphics & Motion toggles.
+- Glass blur is a software box blur over the composited backbuffer. There is no
+  GPU blur or GPU rasterization path; see the 0.5.0 limitations register.
+- HiDPI scales above 1.0 and multi-monitor layouts are not part of the base
+  release; see `docs/releases/0.5.0/KNOWN_LIMITATIONS.md`.
 - The lock screen, Store, Installer, Update and Browser are not implemented and must
   not appear in the UI.

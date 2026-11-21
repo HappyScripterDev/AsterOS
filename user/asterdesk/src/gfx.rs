@@ -226,7 +226,8 @@ impl Surface {
         let color = if self.opacity == 255 {
             color
         } else {
-            color.scale_alpha(self.opacity as f32 / 255.0)
+            let alpha = (color.alpha() as u32 * self.opacity as u32) / 255;
+            color.with_alpha(alpha as u8)
         };
         let index = (y * self.width + x) as usize;
         unsafe {
@@ -256,22 +257,43 @@ impl Surface {
         if rect.is_empty() {
             return;
         }
-        if color.alpha() == 255 && self.opacity == 255 {
+        if color.alpha() == 0 || self.opacity == 0 {
+            return;
+        }
+        let alpha = (color.alpha() as u32 * self.opacity as u32) / 255;
+        if alpha == 255 {
             let value = color.0 & 0x00FF_FFFF;
             for y in rect.y..rect.bottom() {
                 let start = (y * self.width + rect.x) as usize;
                 let end = (y * self.width + rect.right()) as usize;
                 unsafe {
-                    for i in start..end {
-                        *self.pixels.add(i) = value;
+                    let row = core::slice::from_raw_parts_mut(self.pixels.add(start), end - start);
+                    for pixel in row {
+                        *pixel = value;
                     }
                 }
             }
             return;
         }
+        let inv = 255 - alpha;
+        let sr = color.r() as u32 * alpha;
+        let sg = color.g() as u32 * alpha;
+        let sb = color.b() as u32 * alpha;
         for y in rect.y..rect.bottom() {
-            for x in rect.x..rect.right() {
-                self.put(x, y, color);
+            let start = (y * self.width + rect.x) as usize;
+            let end = (y * self.width + rect.right()) as usize;
+            unsafe {
+                let row = core::slice::from_raw_parts_mut(self.pixels.add(start), end - start);
+                for pixel in row {
+                    let value = *pixel;
+                    let dr = ((value >> 16) & 0xFF) * inv + sr;
+                    let dg = ((value >> 8) & 0xFF) * inv + sg;
+                    let db = (value & 0xFF) * inv + sb;
+                    let r = (dr + 1 + (dr >> 8)) >> 8;
+                    let g = (dg + 1 + (dg >> 8)) >> 8;
+                    let b = (db + 1 + (db >> 8)) >> 8;
+                    *pixel = (r << 16) | (g << 8) | b;
+                }
             }
         }
     }

@@ -10,52 +10,52 @@ There is no touch, pen, gesture, or multi-touch input.
 ---
 
 
-> **Shipped shell (2026-11-20).** Ctrl+Space opens Spotlight; the menu bar
+> **Shipped shell (2026-11-21).** Ctrl+Space opens Spotlight; the menu bar
 > exposes App/File/Edit/View/Window/Help menus; clicking the clock opens the
 > notification centre; the Control Centre exposes display brightness, reduce
-> motion and honest unavailable connectivity/audio states. There is no dark
-> mode. The Edit menu's Undo/Cut/Copy/Paste entries are disabled because those
-> services are not implemented.
+> motion, reduce transparency, blur and quality. F3 opens Window Overview,
+> Alt+Tab shows live window previews, F11/Meta+F enters fullscreen, and the
+> top-bar pager jumps between desktops. There is no dark mode. The Edit menu's
+> Undo/Cut/Copy/Paste entries are disabled because those services are not
+> implemented.
 
 
 ## 1. Keyboard shortcuts
 
-"Super" is the Windows/Command/Logo key. Shortcuts are matched on keydown unless noted.
-The compositor consumes Super, Ctrl+Alt, Alt+Tab, F10, Shift+F10 and Esc when a
-transient is open. Apps receive all other keys.
+"Meta" is the Windows/Command/Logo key. Shortcuts are matched on keydown unless noted.
+The compositor consumes Meta+F, Alt+Tab, F3, F11, Esc and the Ctrl chords listed below.
+Apps receive all other keys.
 
 ### 1.1 Global shortcuts
 
 | Shortcut | Action | Status |
 |---|---|---|
-| Super (press and release, no chord) | Toggle the launcher | v1 |
-| Space | Open the launcher when the desktop has focus and no text field is focused | v1 |
-| Super+Q | Close the focused window | v1 |
-| Super+M | Minimize the focused window | v1 |
-| Super+Up | Maximize / restore the focused window | v1 |
-| Super+Down | Restore a snapped or maximized window; no-op when floating | v1 |
-| Super+Left | Snap the focused window to the left half | v1 |
-| Super+Right | Snap the focused window to the right half | v1 |
-| Ctrl+Alt+Left | Previous virtual desktop; clamps at desktop 1 | v1 |
-| Ctrl+Alt+Right | Next virtual desktop; clamps at desktop 4 | v1 |
+| Ctrl+Space | Toggle the launcher | v1 |
+| Ctrl+W | Close the focused window | v1 |
+| Ctrl+M | Minimize the focused window | v1 |
+| Ctrl+Tab | Focus the next window on this desktop | v1 |
+| Ctrl+Left | Previous virtual desktop; clamps at desktop 1 | v1 |
+| Ctrl+Right | Next virtual desktop; clamps at desktop 4 | v1 |
+| F3 or Ctrl+Up | Toggle Window Overview | v1 |
 | Alt+Tab | Open the switcher, advance selection | v1 |
-| Alt+Shift+Tab | Open the switcher, move selection backward | v1 |
-| Alt (hold) + arrows | Move selection in the switcher | v1 |
-| Esc | Dismiss the top transient; cancel a window drag or resize | v1 |
+| Alt (hold) + Tab | Advance the switcher selection | v1 |
+| Release Alt | Activate the selected switcher tile | v1 |
+| F11 | Toggle fullscreen for the focused window | v1 |
+| Meta+F | Toggle fullscreen for the focused window | v1 |
+| Esc | Dismiss the top transient; exit fullscreen; cancel a window drag or resize | v1 |
 | Tab / Shift+Tab | Move focus forward / backward | v1 |
 | Enter / Space | Activate the focused control | v1 |
 | Up / Down / Left / Right | Move within the focused composite widget | v1 |
 | Home / End | First / last item in a list or menu | v1 |
 | PageUp / PageDown | Scroll one page in a scrollable region | v1 |
-| F10 | Focus the menu bar (first menu title) | v1 |
-| Shift+F10 | Open the context menu for the focused element | v1 |
-| Super+L | Lock screen | NOT IMPLEMENTED. Reserved. No lock UI, no menu item, no toast. |
-| Super+D | Show desktop | NOT IMPLEMENTED |
-| Super+Tab | Window switcher | NOT IMPLEMENTED; use Alt+Tab |
-| Alt+F4 | Close window | NOT IMPLEMENTED; use Super+Q |
+| F10 | Focus the menu bar (first menu title) | specified |
+| Shift+F10 | Open the context menu for the focused element | specified |
+| Meta+L | Lock screen | NOT IMPLEMENTED. Reserved. No lock UI, no menu item, no toast. |
+| Meta+D | Show desktop | NOT IMPLEMENTED |
+| Alt+F4 | Close window | NOT IMPLEMENTED; use Ctrl+W |
 | PrintScreen | Screenshot | NOT IMPLEMENTED |
 | Ctrl+Alt+Shift+Left / Right | Move window to another desktop | NOT IMPLEMENTED |
-| Super+1..9 | Launch dock app by position | NOT IMPLEMENTED |
+| Meta+1..9 | Launch dock app by position | NOT IMPLEMENTED |
 
 ### 1.2 App shortcuts (pass-through)
 
@@ -71,11 +71,11 @@ consistently when the action applies:
 | Ctrl+S | Save |
 | Ctrl+O | Open |
 | Ctrl+N | New document or window |
-| Ctrl+W | Close the current tab or document, not the window |
+| Ctrl+W | Close the focused window (the shell owns this chord) |
 | Ctrl+Home / Ctrl+End | Start / end of document |
 | Shift+arrows | Extend selection |
 
-Apps must not bind Super, Ctrl+Alt, Alt+Tab, F10, Shift+F10, or Esc at the window level.
+Apps must not bind Meta+F, Alt+Tab, F3, F11, F10, Shift+F10, or Esc at the window level.
 Esc inside a text field first cancels an IME composition or closes an app popup, then
 propagates to the compositor.
 
@@ -169,12 +169,25 @@ propagates to the compositor.
 - Hold Alt and press Tab or arrows to move. Focus does not change until commit.
 - Release Alt to activate. Esc cancels and returns focus to the previous window.
 - Clicking a tile activates it. Moving the pointer does not change the selection.
-- The switcher is one row, max 6 tiles, horizontal scroll beyond 6.
+- Each tile shows a live thumbnail of the window captured when the switcher opened,
+  plus its app icon fallback for minimized windows.
+- The switcher is one row, max 7 tiles; additional windows are clipped, not scrolled.
 - If only one window exists, it still opens and selects that window.
+- Alt+Tab takes precedence over a fading Window Overview: the overview is dropped
+  immediately and the switcher opens without waiting for the fade.
+
+### 2.6.1 Window Overview
+
+- F3 or Ctrl+Up toggles a full-screen overview of every window on the current desktop.
+- Cards use live previews captured at open time; arrows select, Enter focuses, Esc or
+  F3 closes, and clicking a card focuses it. Clicking outside the cards closes.
+- The overview dims the composited desktop; with `reduce_transparency` the dim is
+  replaced by an opaque canvas so text remains legible.
+- Fullscreen windows are labelled `[Fullscreen]`; minimized windows `[Minimized]`.
 
 ### 2.7 Virtual desktops
 
-- Ctrl+Alt+Left/Right switches, clamped, no wrap.
+- Ctrl+Left/Right switches, clamped, no wrap. Pager clicks on the top bar jump directly.
 - Focus on the destination desktop is the last focused window there; if none, desktop.
 - A window being dragged cannot cross desktops; the desktop switch shortcut is ignored
   while a drag or resize is active.
@@ -183,10 +196,12 @@ propagates to the compositor.
 ### 2.8 Transient input rules
 
 - The launcher is modal. Global window and desktop shortcuts are suspended while it is
-  open; Esc or Super closes it, and pointer input outside the panel closes it. The top
-  bar remains usable and opening a top-bar menu closes the launcher first.
+  open; Esc or Ctrl+Space closes it, and pointer input outside the panel closes it. The
+  top bar remains usable and opening a top-bar menu closes the launcher first.
 - Menus and the Alt-Tab switcher also suspend window and desktop shortcuts. Esc closes
   them; Alt+Tab controls the switcher itself.
+- Window Overview is modal. Arrow keys move its selection and Escape closes it; other
+  global shortcuts are suspended until it closes.
 - Control center and notification center are non-modal. Opening one moves keyboard focus
   into the panel; Esc closes it and returns focus to the previous control. Alt+Tab closes
   the panel and opens the switcher. A pointer click outside closes the panel and is
@@ -194,7 +209,8 @@ propagates to the compositor.
 - Tooltips never take focus and never block input.
 - A window drag or resize suspends the launcher, panels, menus and desktop switching
   until release or Esc.
-- Esc with no transient open and no drag active is delivered to the focused app.
+- Esc with no transient open exits fullscreen; otherwise it is delivered to the focused
+  app.
 
 ---
 

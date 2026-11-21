@@ -383,6 +383,8 @@ pub mod keys {
     pub const LEFT_ALT: u32 = 0x124;
     pub const RIGHT_ALT: u32 = 0x125;
     pub const CAPS_LOCK: u32 = 0x126;
+    pub const LEFT_META: u32 = 0x127;
+    pub const RIGHT_META: u32 = 0x128;
 }
 
 #[repr(C)]

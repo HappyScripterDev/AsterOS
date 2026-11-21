@@ -87,6 +87,7 @@ pub struct Window {
     pub minimized: bool,
     pub maximized: bool,
     pub snapped: u8,
+    pub fullscreen: bool,
     pub z: u64,
     pub state: WindowState,
     pub transition: Option<Transition>,
@@ -186,6 +187,7 @@ pub struct WindowManager {
 
     pub force_full: bool,
     dock_anchors: [(AppKind, (i32, i32)); 10],
+    screen: Rect,
     animation_speed: f32,
     reduce_motion: bool,
     window_animations: bool,
@@ -214,6 +216,7 @@ impl WindowManager {
             force_full: false,
 
             dock_anchors,
+            screen: Rect::new(0, 0, 1280, 800),
             animation_speed: 1.0,
             reduce_motion: false,
             window_animations: true,
@@ -326,6 +329,7 @@ impl WindowManager {
             minimized: false,
             maximized: false,
             snapped: 0,
+            fullscreen: false,
             z: self.z_counter,
             state: WindowState::Opening,
             transition: None,
@@ -371,6 +375,18 @@ impl WindowManager {
     }
 
     pub fn focus_id(&mut self, id: u64) {
+        if self.focus != Some(id) {
+            if let Some(previous) = self
+                .windows
+                .iter_mut()
+                .find(|window| Some(window.id) == self.focus && window.fullscreen)
+            {
+                previous.fullscreen = false;
+                previous.rect = previous.normal;
+                previous.state = WindowState::Normal;
+                previous.transition = None;
+            }
+        }
         self.z_counter += 1;
         if let Some(window) = self.windows.iter_mut().find(|w| w.id == id) {
             window.z = self.z_counter;
@@ -456,6 +472,10 @@ impl WindowManager {
             return;
         }
         let from = self.windows[index].current_rect(now);
+        if self.windows[index].fullscreen {
+            self.windows[index].fullscreen = false;
+            self.windows[index].rect = self.windows[index].normal;
+        }
         let anchor = self.dock_anchor(self.windows[index].kind());
         let target = Rect::new(anchor.0 - 10, anchor.1 - 10, 20, 20);
         self.windows[index].minimized = true;
@@ -523,7 +543,67 @@ impl WindowManager {
         self.focus_id(id);
     }
 
+    pub fn set_screen(&mut self, screen: Rect) {
+        self.screen = screen;
+    }
+
+    pub fn fullscreen_active(&self) -> bool {
+        self.focus
+            .and_then(|id| self.windows.iter().find(|window| window.id == id))
+            .map(|window| window.fullscreen && window.desktop == self.desktop)
+            .unwrap_or(false)
+    }
+
+    pub fn toggle_fullscreen(&mut self, id: u64) {
+        let now = sys::time_ms();
+        let screen = self.screen;
+        let Some(index) = self.windows.iter().position(|w| w.id == id) else {
+            return;
+        };
+        let current = self.windows[index].current_rect(now);
+        if self.windows[index].fullscreen {
+            let target = self.windows[index].normal;
+            self.windows[index].fullscreen = false;
+            self.windows[index].rect = target;
+            self.windows[index].state = WindowState::Normal;
+            self.begin(
+                index,
+                TransitionKind::Unmaximize,
+                current,
+                target,
+                1.0,
+                1.0,
+                MAXIMIZE_MS,
+                Easing::CubicInOut,
+            );
+        } else {
+            self.windows[index].normal = self.windows[index].rect;
+            self.windows[index].fullscreen = true;
+            self.windows[index].maximized = false;
+            self.windows[index].snapped = 0;
+            self.windows[index].rect = screen;
+            self.windows[index].state = WindowState::Maximized;
+            self.begin(
+                index,
+                TransitionKind::Maximize,
+                current,
+                screen,
+                1.0,
+                1.0,
+                MAXIMIZE_MS,
+                Easing::CubicInOut,
+            );
+        }
+        self.focus_id(id);
+    }
+
     pub fn toggle_maximize(&mut self, id: u64, work_area: Rect) {
+        if let Some(window) = self.windows.iter().find(|window| window.id == id) {
+            if window.fullscreen {
+                self.toggle_fullscreen(id);
+                return;
+            }
+        }
         let now = sys::time_ms();
         let Some(index) = self.windows.iter().position(|w| w.id == id) else {
             return;
@@ -839,6 +919,17 @@ impl WindowManager {
                 continue;
             }
 
+            if window.fullscreen {
+                let opacity = window.current_opacity(now);
+                let previous_opacity = surface.set_opacity((opacity * 255.0) as u8);
+                let content = rect;
+                let previous_clip = surface.set_clip(content.intersect(clip));
+                window.app.draw(surface, content, theme);
+                surface.set_clip(previous_clip);
+                surface.set_opacity(previous_opacity);
+                continue;
+            }
+
             let focused = self.focus == Some(window.id);
             let focus_t = (now.saturating_sub(window.focus_changed_at) as f32 / FOCUS_MS as f32)
                 .clamp(0.0, 1.0);
@@ -1088,6 +1179,18 @@ impl WindowManager {
             self.windows[index].state = WindowState::Normal;
         }
 
+        // Fullscreen windows expose no chrome: the whole surface goes to the
+        // app, so hidden traffic lights cannot be clicked and the top edge is
+        // not a drag handle.
+        if self.windows[index].fullscreen {
+            let rect = self.windows[index].rect;
+            let window = &mut self.windows[index];
+            if let Some(action) = window.app.mouse(x, y, rect, theme) {
+                actions.push(action);
+            }
+            return actions;
+        }
+
         let rect = self.windows[index].rect;
         for control in 0..3u8 {
             let cx = rect.x + 18 + control as i32 * 20;
@@ -1142,7 +1245,7 @@ impl WindowManager {
         self.hover_control = None;
         if let Some(id) = self.window_at(x, y) {
             if let Some(window) = self.windows.iter().find(|w| w.id == id) {
-                if y < window.rect.y + TITLE_HEIGHT {
+                if !window.fullscreen && y < window.rect.y + TITLE_HEIGHT {
                     for control in 0..3u8 {
                         let cx = window.rect.x + 18 + control as i32 * 20;
                         let cy = window.rect.y + TITLE_HEIGHT / 2;
@@ -1301,7 +1404,7 @@ impl WindowManager {
     }
 
     /// Snapshot of visible windows for the overview and quick switcher.
-    pub fn overview_items(&self) -> Vec<(u64, String, AppKind, usize, bool, Rect)> {
+    pub fn overview_items(&self) -> Vec<(u64, String, AppKind, usize, bool, bool, Rect)> {
         let mut items = Vec::new();
         for window in &self.windows {
             if window.state.is_closed() {
@@ -1313,6 +1416,7 @@ impl WindowManager {
                 window.kind(),
                 window.desktop,
                 window.state == WindowState::Minimized,
+                window.fullscreen,
                 window.normal,
             ));
         }

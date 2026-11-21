@@ -94,3 +94,18 @@ Date: 2026-11-21
   `aster-motion` unit tests.
 - `tools/persistence_test.py` and `tools/settings_test.py` updated to the new
   compact settings groups.
+
+## Extension: graphics engine phase 1 (2026-11-21)
+
+- Added material tokens and live glass backdrop blur over the composited
+  backbuffer, with reusable scratch buffers and quality-scaled radius/downsample.
+- Optimised solid and translucent rectangles to integer alpha with row-wise
+  blends; a 1280x800 dim now costs ~2 ms of guest time instead of ~25 ms.
+- Replaced the desktop bump allocator with a first-fit heap that splits blocks
+  and coalesces neighbours on free. Preview and string buffers now return to the
+  heap, so long sessions no longer exhaust the 48 MiB arena.
+- Added fullscreen windows (F11 / Meta+F, Escape to exit) that hide the top bar
+  and dock and route the whole surface to the app.
+- Added a clickable top-bar workspace pager and live Alt-Tab window thumbnails.
+- Documented the shipped glass recipe, fullscreen behaviour and shortcuts in the
+  design system, desktop spec and interaction spec.

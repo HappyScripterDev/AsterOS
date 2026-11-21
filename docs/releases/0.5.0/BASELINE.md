@@ -80,3 +80,34 @@ extension. Audit against the extended engine brief:
 The extension starts from a clean working tree and a green 0.4/0.5 regression
 suite. Features are added incrementally; unimplemented items remain listed here
 and in `KNOWN_LIMITATIONS.md` until they have real code and evidence.
+
+## 6. Extension phase 1 - materials, live glass, fullscreen
+
+Shipped after the baseline commit on `milestone/aster-0.5.0-gpu`:
+
+- `user/asterdesk/src/material.rs`: eight light-theme material tokens
+  (`ULTRA_THIN`, `THIN`, `REGULAR`, `THICK`, `CHROME`, `PANEL`, `SIDEBAR`,
+  `MENU`) with tint, blur radius, downsample, saturation, noise, highlight and
+  border.
+- `user/asterdesk/src/glass.rs`: live backdrop blur that samples the already
+  composited backbuffer, downsamples, runs two integer box-blur passes, then
+  applies saturation, dither and tint. Scratch buffers are owned by `Desktop`
+  and reused, so the frame loop performs no blur allocation.
+- Top bar, dock, launcher, Control Centre, notification panel and toasts now use
+  material tokens and live glass; the launcher's full-screen wallpaper copy is
+  gone.
+- `gfx::fill_rect` and `Surface::put` use integer alpha only. A full-screen
+  120/255 dim dropped from ~25 ms to ~2 ms of guest time; the overview frame
+  dropped from ~60 ms to ~9 ms and now lands inside the acceptance-test window.
+- `wm::Window::fullscreen`: F11 / Meta+F toggles, Escape exits, chrome is hidden,
+  the app receives the full screen and hidden traffic lights cannot be clicked.
+  Focusing another window restores the previous rect.
+- Top-bar workspace pager (click to jump, 16x16 hit targets) alongside the
+  existing transient dock indicator.
+- Alt-Tab cards now carry a live thumbnail captured at open time (icon fallback
+  for minimized windows). Alt-Tab replaces a fading overview immediately.
+- Pointer routing and focus rules for fullscreen were added to `wm.rs`.
+
+Remaining extension gaps are unchanged: per-window surfaces and Damage v2,
+Stage Manager, workspace drag, HiDPI >1.0, VirtIO-GPU scanout and `FB_PRESENT`,
+and SIMD raster paths.
