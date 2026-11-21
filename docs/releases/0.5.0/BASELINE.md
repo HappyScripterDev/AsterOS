@@ -50,3 +50,33 @@ This document records the verified rendering state at the start of 0.5.0.
 3. Add time-based motion, never input-blocking sleeps in animation code.
 4. Every settings control must change real behaviour and persist through the existing `version=1` settings service.
 5. Keep the 1280x800 QEMU target working and document scaling/multi-monitor as foundations only.
+
+## 5. Extension audit (2026-11-21, `milestone/aster-0.5.0-gpu`)
+
+The repository already contains a **committed** 0.5.0 graphics/motion baseline
+(tag `v0.5.0`, commit `f621a77`). It is preserved as the baseline for this
+extension. Audit against the extended engine brief:
+
+| Requirement | Actual state |
+|---|---|
+| Dirty-region compositor, partial present, idle skip | DONE in `render.rs` and `desktop.rs` |
+| `aster-motion` easing/tween/spring/tracks/tests | DONE, 8 host tests |
+| Window state machine and animated transitions | DONE |
+| Dock 2.0, Overview, Alt-Tab, workspace slide, Text tabs | DONE |
+| Per-window offscreen surfaces + compositor blit | **NOT DONE**; windows draw directly into the desktop surface |
+| Damage v2 with app-content/occlusion tracking | **PARTIAL**; compositor-level rectangles only |
+| Live backdrop blur behind glass | **NOT DONE**; glass samples a precomputed wallpaper blur |
+| Material tokens (`ultra_thin`…`sidebar`) | **NOT DONE** |
+| Contrast test for glass text | **NOT DONE** |
+| Stage Manager / window groups | **NOT DONE** |
+| Fullscreen space (chrome hidden, restore) | **NOT DONE**; only maximize |
+| Alt-Tab live previews | **PARTIAL**; icons/titles only |
+| Workspace drag between desktops | **NOT DONE** |
+| HiDPI 1.25/1.5/2.0 | **NOT DONE**; `ui_scale` is a persisted foundation only |
+| VirtIO-GPU scanout/`FB_PRESENT` | **NOT DONE**; GOP direct present only |
+| SIMD raster paths | **NOT DONE** |
+| Social/scratch tests `gfx_test`, `motion_test`, `stage_test`, `perf_test` | **PARTIAL**; `graphics_test.py` and motion unit tests exist |
+
+The extension starts from a clean working tree and a green 0.4/0.5 regression
+suite. Features are added incrementally; unimplemented items remain listed here
+and in `KNOWN_LIMITATIONS.md` until they have real code and evidence.
