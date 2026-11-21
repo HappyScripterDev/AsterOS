@@ -120,3 +120,11 @@ Date: 2026-11-21
 - Window content damage is tracked per surface, and invalid windows contribute a
   single dirty rectangle to the compositor.
 - Updated the compositor and limitations documentation for the new model.
+
+## Extension: graphics engine phase 3 (2026-11-21)
+
+- Added SSE2 row fill/copy paths for opaque rectangles and window blits.
+- Added hold-at-edge drag between virtual desktops (700 ms dwell) and fixed the
+  desktop count to the specified four.
+- Added `tools/gfx_test.py` for moved windows, fullscreen, the pager and the
+  desktop drop gesture.

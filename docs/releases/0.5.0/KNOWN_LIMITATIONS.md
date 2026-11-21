@@ -12,6 +12,8 @@ This is the honest list of what 0.5.0 does not do or does with weaker guarantees
   downsample it and run two integer box-blur passes before tinting. There is no
   gaussian blur, no GPU blur and no blur of the full screen; quality modes reduce
   the downsample/radius. Large panels cost more than the wallpaper-only fallback.
+- **SIMD covers opaque rows only.** SSE2 is used for solid fills and opaque window
+  blits; alpha blends, rounded rectangles, text and blur remain scalar.
 - **Dirty regions are compositor rectangles, not arbitrary regions.** They are
   merged and capped; a busy frame above 62% area becomes a full redraw.
 - **Window shadows are cached masks.** Quality changes require a mask rebuild;
@@ -41,6 +43,8 @@ This is the honest list of what 0.5.0 does not do or does with weaker guarantees
   the overview is visible are not added until it is reopened.
 - The quick switcher renders a live thumbnail captured at open; thumbnails do not
   refresh while Alt is held.
+- The desktop drop gesture has no ribbon or target preview; the window simply
+  follows the desktop switch after the 700 ms dwell.
 - No live animation preview outside Settings; the preview card is a small moving
   rectangle, not a full desktop demo.
 

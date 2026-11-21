@@ -117,6 +117,7 @@ def main() -> None:
     if args.ui:
         run([sys.executable, "tools/ui_test.py"])
         run([sys.executable, "tools/graphics_test.py"])
+        run([sys.executable, "tools/gfx_test.py"])
     print("ALL TESTS PASSED")
 
 

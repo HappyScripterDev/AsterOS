@@ -188,6 +188,8 @@ propagates to the compositor.
 ### 2.7 Virtual desktops
 
 - Ctrl+Left/Right switches, clamped, no wrap. Pager clicks on the top bar jump directly.
+- Holding a dragged window against the left or right screen edge for 700 ms moves it to
+  the adjacent desktop and follows it there; a quick release still snaps.
 - Focus on the destination desktop is the last focused window there; if none, desktop.
 - A window being dragged cannot cross desktops; the desktop switch shortcut is ignored
   while a drag or resize is active.

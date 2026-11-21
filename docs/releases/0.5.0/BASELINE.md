@@ -70,11 +70,11 @@ extension. Audit against the extended engine brief:
 | Contrast test for glass text | **NOT DONE** |
 | Stage Manager / window groups | **NOT DONE** |
 | Fullscreen space (chrome hidden, restore) | **NOT DONE**; only maximize |
-| Alt-Tab live previews | **PARTIAL**; icons/titles only |
-| Workspace drag between desktops | **NOT DONE** |
+| Alt-Tab live previews | **DONE**; captured thumbnails with icon fallback |
+| Workspace drag between desktops | **DONE**; hold a dragged window at the left/right edge for 700 ms |
 | HiDPI 1.25/1.5/2.0 | **NOT DONE**; `ui_scale` is a persisted foundation only |
 | VirtIO-GPU scanout/`FB_PRESENT` | **NOT DONE**; GOP direct present only |
-| SIMD raster paths | **NOT DONE** |
+| SIMD raster paths | **PARTIAL**; SSE2 row fill/copy for opaque rectangles and window blits, scalar alpha/text |
 | Social/scratch tests `gfx_test`, `motion_test`, `stage_test`, `perf_test` | **PARTIAL**; `graphics_test.py` and motion unit tests exist |
 
 The extension starts from a clean working tree and a green 0.4/0.5 regression
@@ -130,3 +130,17 @@ and SIMD raster paths.
 
 Damage v2 is implemented at window granularity. App-internal damage (repainting
 only the changed rows of a text view) remains a documented gap.
+
+## 8. Extension phase 3 - SIMD rows and desktop drag
+
+- `gfx` now has SSE2 row helpers: `fill_row` for opaque rectangles and `clear`,
+  and `copy_row` for the opaque `blit_window` path. The 16-byte loop handles the
+  body and a scalar tail closes each row. Alpha blends, text and rounded paths
+  remain scalar by design.
+- Dragging a window against the left/right edge and holding it for 700 ms drops
+  it on the adjacent desktop and follows it there. The dwell waits 300 ms before
+  hiding the snap preview, so a quick drag still snaps.
+- The window manager now really has four desktops; the pager previously drew
+  three marks even though the specification called for four.
+- New `tools/gfx_test.py` covers moved-window surface restoration, fullscreen
+  dock hiding/restore, pager jumps and the edge-dwell desktop drop.

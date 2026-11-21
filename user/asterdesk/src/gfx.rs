@@ -147,6 +147,42 @@ impl Color {
     }
 }
 
+/// SSE2 row helpers for the two hottest opaque operations: solid fills and
+/// window-content blits. Both use unaligned 16-byte accesses, so they are safe
+/// for any destination alignment and fall back to scalar for the tail.
+#[cfg(target_arch = "x86_64")]
+mod simd {
+    use core::arch::x86_64::{__m128i, _mm_loadu_si128, _mm_set1_epi32, _mm_storeu_si128};
+
+    #[inline]
+    pub unsafe fn fill_row(destination: *mut u32, value: u32, count: usize) {
+        let vector = _mm_set1_epi32(value as i32);
+        let mut index = 0usize;
+        while index + 4 <= count {
+            _mm_storeu_si128(destination.add(index) as *mut __m128i, vector);
+            index += 4;
+        }
+        while index < count {
+            *destination.add(index) = value;
+            index += 1;
+        }
+    }
+
+    #[inline]
+    pub unsafe fn copy_row(source: *const u32, destination: *mut u32, count: usize) {
+        let mut index = 0usize;
+        while index + 4 <= count {
+            let value = _mm_loadu_si128(source.add(index) as *const __m128i);
+            _mm_storeu_si128(destination.add(index) as *mut __m128i, value);
+            index += 4;
+        }
+        while index < count {
+            *destination.add(index) = *source.add(index);
+            index += 1;
+        }
+    }
+}
+
 #[inline]
 fn blend(dst: u32, src: Color) -> u32 {
     let a = src.alpha() as u32;
@@ -246,8 +282,11 @@ impl Surface {
         let value = color.opaque().0 & 0x00FF_FFFF;
         let count = self.width as usize * self.height as usize;
         unsafe {
-            for i in 0..count {
-                *self.pixels.add(i) = value;
+            #[cfg(target_arch = "x86_64")]
+            simd::fill_row(self.pixels, value, count);
+            #[cfg(not(target_arch = "x86_64"))]
+            for index in 0..count {
+                *self.pixels.add(index) = value;
             }
         }
     }
@@ -267,9 +306,11 @@ impl Surface {
                 let start = (y * self.width + rect.x) as usize;
                 let end = (y * self.width + rect.right()) as usize;
                 unsafe {
-                    let row = core::slice::from_raw_parts_mut(self.pixels.add(start), end - start);
-                    for pixel in row {
-                        *pixel = value;
+                    #[cfg(target_arch = "x86_64")]
+                    simd::fill_row(self.pixels.add(start), value, end - start);
+                    #[cfg(not(target_arch = "x86_64"))]
+                    for index in start..end {
+                        *self.pixels.add(index) = value;
                     }
                 }
             }
@@ -846,6 +887,13 @@ impl Surface {
                 let start = ((source_y + row) * source_width + source_x) as usize;
                 let destination_row = (rect.y + row) as usize * self.width as usize;
                 unsafe {
+                    #[cfg(target_arch = "x86_64")]
+                    simd::copy_row(
+                        source.as_ptr().add(start),
+                        self.pixels.add(destination_row + rect.x as usize),
+                        rect.w as usize,
+                    );
+                    #[cfg(not(target_arch = "x86_64"))]
                     core::ptr::copy_nonoverlapping(
                         source.as_ptr().add(start),
                         self.pixels.add(destination_row + rect.x as usize),

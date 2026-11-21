@@ -1428,7 +1428,17 @@ impl Desktop {
                         self.mouse_press(self.mouse_x, self.mouse_y);
                     } else {
                         let work = self.work_area();
-                        self.wm.mouse_up(self.mouse_x, self.mouse_y, work);
+                        if let Some((id, direction)) =
+                            self.wm.mouse_up(self.mouse_x, self.mouse_y, work)
+                        {
+                            let target = (self.wm.desktop as i32 + direction)
+                                .clamp(0, self.wm.desktop_count as i32 - 1)
+                                as usize;
+                            if target != self.wm.desktop {
+                                self.wm.move_to_desktop(id, target);
+                                self.begin_workspace_jump(target);
+                            }
+                        }
                         self.dragging_brightness = false;
                         self.save_preferences();
                     }

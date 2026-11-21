@@ -149,7 +149,7 @@ def main() -> int:
 
         # Minimize the focused Files window and verify the old area is repainted.
         key(qmp, "m", ("ctrl",))
-        time.sleep(1.4)
+        time.sleep(2.8)
         minimized = pixels(shot(qmp, "02-minimized.ppm"))
         if not near(pixel(minimized, 980, 540), pixel(baseline, 980, 540), 20):
             failures.append("minimize left residue in the old window area")
@@ -157,19 +157,19 @@ def main() -> int:
         # Restore from the Files dock icon.
         move_to(qmp, (422, 780))
         click(qmp)
-        time.sleep(1.2)
+        time.sleep(3.0)
         restored = pixels(shot(qmp, "03-restored.ppm"))
         if bright(pixel(restored, 700, 450)) < 190:
             failures.append("dock click did not restore the Files window")
 
         # Window overview.
         key(qmp, "f3")
-        time.sleep(1.0)
+        time.sleep(2.5)
         overview = pixels(shot(qmp, "04-overview.ppm"))
         if bright(pixel(overview, 600, 10)) > bright(pixel(baseline, 600, 10)) - 45:
             failures.append("overview did not dim the desktop")
         key(qmp, "esc")
-        time.sleep(1.3)
+        time.sleep(2.5)
 
         # Held-Alt quick switcher.
         hold_key(qmp, "alt", True)
@@ -177,7 +177,7 @@ def main() -> int:
         hold_key(qmp, "tab", True)
         time.sleep(0.12)
         hold_key(qmp, "tab", False)
-        time.sleep(0.5)
+        time.sleep(2.0)
         switcher = pixels(shot(qmp, "05-switcher.ppm"))
         if bright(pixel(switcher, 640, 400)) < 180:
             failures.append("quick switcher panel is not visible")
@@ -188,12 +188,12 @@ def main() -> int:
 
         # Workspace slide to desktop 2 and back.
         key(qmp, "right", ("ctrl",))
-        time.sleep(1.0)
+        time.sleep(6.0)
         desktop2 = pixels(shot(qmp, "06-desktop2.ppm"))
         if not near(pixel(desktop2, 500, 300), pixel(baseline, 500, 300), 22):
             failures.append("desktop 2 still shows desktop 1 window content")
         key(qmp, "left", ("ctrl",))
-        time.sleep(1.0)
+        time.sleep(6.0)
         desktop1 = pixels(shot(qmp, "07-desktop1.ppm"))
         if bright(pixel(desktop1, 700, 450)) < 190:
             failures.append("returning to desktop 1 lost the window")

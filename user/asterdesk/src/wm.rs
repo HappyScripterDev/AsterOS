@@ -198,6 +198,7 @@ pub struct WindowManager {
     window_animations: bool,
     last_blink: u64,
     last_content_signature: u64,
+    edge_dwell: Option<(u64, i32)>,
 }
 
 impl WindowManager {
@@ -213,7 +214,7 @@ impl WindowManager {
             focus: None,
             interaction: None,
             desktop: 0,
-            desktop_count: 3,
+            desktop_count: 4,
             last_title_click: (0, 0),
             snap_preview: None,
             hover_control: None,
@@ -229,6 +230,7 @@ impl WindowManager {
             window_animations: true,
             last_blink: 0,
             last_content_signature: 0,
+            edge_dwell: None,
         }
     }
 
@@ -1305,7 +1307,35 @@ impl WindowManager {
                     window.rect.x = (x - dx).clamp(-window.rect.w + 120, work_area.right() - 120);
                     window.rect.y = (y - dy).clamp(top_bar + 2, work_area.bottom() - 40);
                 }
-                if x <= SNAP_EDGE {
+
+                // Holding a dragged window against a screen edge for 700 ms
+                // drops it on the adjacent desktop. A quick release still snaps.
+                let direction = if x <= 24 {
+                    -1
+                } else if x >= self.screen.w - 24 {
+                    1
+                } else {
+                    0
+                };
+                let now = sys::time_ms();
+                match self.edge_dwell {
+                    Some((_, held)) if held == direction && direction != 0 => {}
+                    _ => {
+                        self.edge_dwell = if direction != 0 {
+                            Some((now, direction))
+                        } else {
+                            None
+                        }
+                    }
+                }
+                let holding = self
+                    .edge_dwell
+                    .map(|(start, _)| now.saturating_sub(start) >= 300)
+                    .unwrap_or(false);
+
+                if holding {
+                    self.snap_preview = None;
+                } else if x <= SNAP_EDGE {
                     self.snap_preview = Some(Rect::new(
                         work_area.x,
                         work_area.y,
@@ -1364,37 +1394,47 @@ impl WindowManager {
         }
     }
 
-    pub fn mouse_up(&mut self, x: i32, y: i32, work_area: Rect) {
+    pub fn mouse_up(&mut self, x: i32, y: i32, work_area: Rect) -> Option<(u64, i32)> {
+        let mut desktop_move = None;
         if let Some(Interaction::Drag { id, .. }) = self.interaction {
+            if let Some((start, direction)) = self.edge_dwell {
+                if sys::time_ms().saturating_sub(start) >= 700 {
+                    desktop_move = Some((id, direction));
+                }
+            }
             if let Some(window) = self.windows.iter_mut().find(|w| w.id == id) {
                 window.normal = window.rect;
             }
-            let mut snap = 0u8;
-            if x <= SNAP_EDGE {
-                snap = 1;
-            } else if x >= work_area.right() - SNAP_EDGE {
-                snap = 2;
-            } else if y <= 34 {
-                snap = 3;
-            }
-            if snap == 3 {
-                self.toggle_maximize(id, work_area);
-            } else if snap != 0 {
-                let target = if snap == 1 {
-                    Rect::new(work_area.x, work_area.y, work_area.w / 2, work_area.h)
-                } else {
-                    Rect::new(
-                        work_area.x + work_area.w / 2,
-                        work_area.y,
-                        work_area.w / 2,
-                        work_area.h,
-                    )
-                };
-                self.snap_to(id, target, snap, true);
+            if desktop_move.is_none() {
+                let mut snap = 0u8;
+                if x <= SNAP_EDGE {
+                    snap = 1;
+                } else if x >= work_area.right() - SNAP_EDGE {
+                    snap = 2;
+                } else if y <= 34 {
+                    snap = 3;
+                }
+                if snap == 3 {
+                    self.toggle_maximize(id, work_area);
+                } else if snap != 0 {
+                    let target = if snap == 1 {
+                        Rect::new(work_area.x, work_area.y, work_area.w / 2, work_area.h)
+                    } else {
+                        Rect::new(
+                            work_area.x + work_area.w / 2,
+                            work_area.y,
+                            work_area.w / 2,
+                            work_area.h,
+                        )
+                    };
+                    self.snap_to(id, target, snap, true);
+                }
             }
         }
+        self.edge_dwell = None;
         self.interaction = None;
         self.snap_preview = None;
+        desktop_move
     }
 
     pub fn key(&mut self, event: &InputEvent, theme: &Theme) -> Vec<Action> {

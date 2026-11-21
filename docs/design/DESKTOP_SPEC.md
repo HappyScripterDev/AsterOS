@@ -443,7 +443,9 @@ Behavior:
   card; arrows select, Enter focuses, Escape closes, clicking a card focuses it.
 - The pager is centred on the top bar: marks are 14 px apart, active 12 x 4 accent pill,
   inactive 7 x 4 at 60/255 black. Its hit targets are 16 x 16.
-- Drag-window-to-desktop and desktop reordering are not implemented in v0.5.
+- Dragging a window against the left or right edge and holding for 700 ms moves it to
+  the adjacent desktop and follows it. A quick release keeps the snap behaviour.
+- Desktop reordering and a drag preview ribbon are not implemented in v0.5.
 
 ---
 

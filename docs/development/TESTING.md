@@ -18,6 +18,8 @@ python tools/test.py --ui
 
 # Additional interaction harnesses
 python tools/ui_test.py
+python tools/graphics_test.py
+python tools/gfx_test.py
 python tools/app_probe.py
 python tools/pointer_test.py
 python tools/wm_probe.py
