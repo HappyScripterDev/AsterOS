@@ -54,52 +54,52 @@ Details: `docs/releases/0.6.0/KNOWN_LIMITATIONS.md`.
 - Stage Manager/window groups and tab drag/tear-out.
 - App-internal damage, resource cache/eviction and leak tests.
 
-### 0.7.0 - Storage Foundation (AFS v2) (NEXT)
+### 0.7.0 - Storage Foundation (AFS v2) (DEFERRED)
 
-Goal: replace FAT32 as the persistent home with a real filesystem that supports
-long names, permissions, checksums, journaling and crash recovery. This is the
-prerequisite for users/permissions and the 1.0 crash-consistency gate.
+Planned but not implemented; 0.8.0 does not depend on it. The detailed plan
+remains in `docs/releases/0.7.0/ROADMAP.md` and moves to 0.8.1.
 
 - AFS v2 on-disk format: superblock, inodes, extents, directories, long names,
   allocation bitmap, CRC32 checksums and a metadata journal.
 - Kernel driver: mount, read/write, create, mkdir, rename, unlink, truncate,
   fsync, stat, readdir and UID/GID/mode fields.
 - Crash consistency: journal replay, fsck and crash-injection tests.
-- Migration: copy `/home/user` from FAT32 to AFS, verify every file, switch the
-  mount and keep the FAT32 volume as a read-only backup.
-- VFS integration: AFS mount kind, inode tagging, long paths, `fsync`, `stat`
-  fields and cross-directory rename.
-- Tests and release evidence in `docs/releases/0.7.0/`.
+- Migration from FAT32 with a read-only backup.
 
-No users/login UI in 0.7.0; permissions use the implicit user UID 1000 and root
-0. Accounts and login are 0.7.1.
+### 0.8.0 - Users, Login & First-Boot Setup (NEXT)
 
-Detailed plan: `docs/releases/0.7.0/ROADMAP.md`.
+Goal: a real first-run and sign-in experience. Accounts, login, lock, logout, a
+setup wizard with language, keyboard layout and timezone, and per-user homes and
+settings. This is authentication and UX, not yet a kernel-enforced multi-user
+security boundary; AFS and kernel permissions follow in 0.8.1.
 
-### 0.7.1 - Users, Login & Permissions
+- First-boot wizard: language, keyboard layout with a test field, timezone,
+  account creation (full name, username, password) and finish.
+- Accounts: versioned account database, UID/GID, password hashing with a
+  reviewed KDF, admin flag and per-user home `/home/U<uid>`.
+- Login, lock (`Super+L`) and logout surfaces; wrong-password handling and a
+  short retry delay.
+- Language: English and German for the shell, onboarding, login and Settings;
+  font atlas extended to Latin-1; missing glyphs stay visible as boxes.
+- Keyboard layouts: US and DE at minimum, shared by PS/2 and USB HID, applied
+  immediately in setup and persisted.
+- Timezone: curated zone list with UTC offset and DST, used by the clock,
+  Calendar and `date`; RTC treated as UTC.
+- Per-user settings and home directories; migrate existing `/home/user` data
+  into the first account's home and keep a backup.
+- Honest gap: one desktop process, no kernel-enforced file isolation yet. Do
+  not claim multi-user security.
 
-- Accounts, login/lock screen, password hashing with a reviewed KDF, sessions
-  and logout.
-- User creation/deletion, home directories, Settings > Users and `whoami`/`id`.
-- File permissions and ACLs on AFS, privilege prompts and `chmod`/`chown`.
-- Fast user switching if the session model supports it; otherwise document.
-- No sandboxing, hardening or crypto stack yet.
+Detailed plan: `docs/releases/0.8.0/ROADMAP.md`.
 
-### 0.7.2 - Isolation & Hardening
+### 0.8.1 - AFS v2 & Permissions
 
-- Capabilities, sandbox profiles and syscall filters.
-- Out-of-process app groundwork; full app migration remains 0.8.
-- ASLR/KASLR, SMEP/SMAP/UMIP, guard pages, quotas and audit log.
-- Updated threat model and external review.
+- AFS v2 format, journal, crash recovery and FAT32 migration.
+- Kernel-enforced UID/GID/mode permissions and per-user home isolation.
+- File ACLs and privilege prompts where the storage model supports them.
+- Session manager groundwork for real multi-user sessions.
 
-### 0.7.3 - Crypto & Trust
-
-- CSPRNG, TLS 1.3, certificate store and signatures.
-- Secure-boot chain for the loader, signed updates and packages.
-- Firewall and network policy, DNS privacy.
-- Security review and signed release artifacts.
-
-### 0.8.0 - Ecosystem & Developer Platform
+### 0.8.2 - Ecosystem & Developer Platform
 
 - App ABI 2 with stability guarantees, versioned SDK, examples, templates and
   `cargo aster`.
@@ -111,6 +111,13 @@ Detailed plan: `docs/releases/0.7.0/ROADMAP.md`.
   debug symbols.
 - One real third-party port (game or emulator) as proof of graphics, audio,
   input and packaging.
+
+### 0.8.3 - Security Hardening & Crypto
+
+- Capabilities, sandbox profiles and syscall filters.
+- ASLR/KASLR, SMEP/SMAP/UMIP, guard pages, quotas and audit log.
+- CSPRNG, TLS 1.3, certificate store, signatures and the secure-boot chain.
+- Firewall and network policy, DNS privacy, threat-model review.
 
 ### 0.9.0 - Release Candidate
 
