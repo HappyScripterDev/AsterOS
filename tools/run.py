@@ -155,6 +155,7 @@ class Qmp:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run Aster OS under QEMU")
     parser.add_argument("--headless", action="store_true")
+    parser.add_argument("--usb", action="store_true", help="attach qemu-xhci with USB keyboard and mouse")
     parser.add_argument("--screenshot", help="capture a PPM screenshot before quitting")
     parser.add_argument("--timeout", type=float, default=12.0, help="seconds to run")
     parser.add_argument("--memory", default="512M")
@@ -188,6 +189,13 @@ def main() -> None:
         cmd += ["-cdrom", args.iso, "-boot", "d"]
     else:
         cmd += drive_args()
+    if args.usb:
+        pass
+        cmd += [
+            "-device", "qemu-xhci,id=xhci",
+            "-device", "usb-kbd,bus=xhci.0",
+            "-device", "usb-mouse,bus=xhci.0",
+        ]
     if args.headless:
         cmd += [
             "-display", "none",
@@ -197,6 +205,8 @@ def main() -> None:
         cmd += ["-display", args.display]
     if args.debug:
         cmd += ["-S", "-s"]
+    if os.environ.get("QEMU_TRACE"):
+        cmd += ["-trace", os.environ["QEMU_TRACE"]]
 
     print("  $ " + " ".join(cmd))
     proc = subprocess.Popen(cmd, cwd=ROOT)

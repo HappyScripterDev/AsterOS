@@ -48,3 +48,15 @@ inventory work below is real and tested. USB xHCI is still absent, so the
 `device_probe.py` pass together with the existing suite. `usb_test.py` is
 absent because there is no USB driver. No interrupt-latency or USB-latency
 number is claimed.
+
+## USB xHCI status
+
+An experimental xHCI driver (`kernel/src/drivers/xhci.rs`) and a
+`python tools/run.py --usb` QEMU mode exist. The controller is discovered,
+reset, its command/event rings are programmed, slots are enabled, devices are
+addressed and control transfers are attempted. **HID enumeration and transfer
+event handling are not stable**, so USB input and hotplug are still NOT working
+and `tools/usb_test.py` remains absent.
+
+The driver is not claimed as a feature: the Devices page continues to say
+"USB xHCI: not implemented". The v0.6.0 tag stays unset.

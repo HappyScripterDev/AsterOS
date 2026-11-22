@@ -132,6 +132,7 @@ pub extern "C" fn kernel_main(boot_info_address: u64) -> ! {
     sched::init();
     net::start();
     drivers::ps2::init();
+    drivers::xhci::init();
     match user::spawn_module("desk") {
         Ok(pid) => crate::info!("init: desktop started as pid {}", pid),
         Err(error) => crate::error!("init: cannot start the desktop: {}", error),

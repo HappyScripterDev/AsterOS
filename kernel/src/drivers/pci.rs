@@ -281,3 +281,34 @@ pub fn enumerate(out: &mut [aster_abi::DeviceInfo]) -> usize {
     }
     count
 }
+
+/// Locate the xHCI controller by PCI class 0x0C/0x03/0x30.
+pub fn find_xhci() -> Option<Device> {
+    for device in 0..32u8 {
+        for function in 0..8u8 {
+            let vendor = read32(0, device, function, 0) as u16;
+            if vendor == 0xFFFF {
+                if function == 0 {
+                    break;
+                }
+                continue;
+            }
+            let class = (read32(0, device, function, 0x08) >> 24) as u8;
+            let subclass = (read32(0, device, function, 0x08) >> 16) as u8;
+            let prog_if = (read32(0, device, function, 0x08) >> 8) as u8;
+            if class == 0x0C && subclass == 0x03 && prog_if == 0x30 {
+                return Some(Device {
+                    bus: 0,
+                    device,
+                    function,
+                    vendor,
+                    id: (read32(0, device, function, 0) >> 16) as u16,
+                    class,
+                    subclass,
+                    prog_if,
+                });
+            }
+        }
+    }
+    None
+}

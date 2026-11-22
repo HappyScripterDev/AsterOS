@@ -439,6 +439,10 @@ pub fn handle_keyboard() {
     handle_key(data);
 }
 
+pub fn push_external(event: aster_abi::InputEvent) {
+    QUEUE.lock().push(event);
+}
+
 pub fn handle_mouse() {
     let status = unsafe { inb(STATUS) };
     if status & 0x01 == 0 {
