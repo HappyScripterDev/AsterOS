@@ -71,7 +71,8 @@ verified during the recorded milestone session. Limitations are explicit.
 | Store / Installer / Update | Not implemented | - | Deliberately absent from UI |
 | Browser | Not implemented | - | Networking exists, but no browser engine integration |
 | Networking | Partial | Yes | e1000 + IPv4 client stack, DHCP/DNS/TCP/UDP sockets, live UI; polling, IPv4 only, no inbound TCP, IPv6 or TLS |
-| Users/login | Not implemented | - | Single implicit `user`, no password |
+| Users/login | Partial | Yes (core only) | `aster-auth` username rules, PBKDF2-HMAC-SHA256 and account DB with host tests; no wizard/login/lock/on-disk persistence yet |
+| Password hashing | Implemented in core | Yes | PBKDF2-HMAC-SHA256 (100k), published SHA/HMAC/PBKDF2 vectors, constant-time compare; salts not yet wired to an entropy source |
 | Sandboxing | Partial | Yes | Spawned processes/children are isolated; configd is a separate process; built-in apps still share the desktop |
 | Services | Partial | Yes | configd settings service, supervisor restart, timeout and direct-I/O fallback; no generic manager/KILL |
 | Logging | Partial | Yes | Levels/timestamps/subsystem prefixes, LOG_READ and Monitor log view; volatile ring |

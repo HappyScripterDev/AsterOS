@@ -4,6 +4,7 @@ members = [
     "boot",
     "kernel",
     "shared/aster-abi",
+    "shared/aster-auth",
     "shared/aster-motion",
     "user/asterdesk",
     "user/isoprobe",

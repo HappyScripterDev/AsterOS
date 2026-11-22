@@ -1,0 +1,11 @@
+[package]
+name = "aster-auth"
+version = "0.8.0"
+edition = "2021"
+description = "Aster OS account validation, PBKDF2-HMAC-SHA256 and account database"
+
+[lib]
+name = "aster_auth"
+path = "src/lib.rs"
+
+[dependencies]

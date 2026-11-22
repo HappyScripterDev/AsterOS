@@ -1,6 +1,6 @@
 # Aster OS - Project Status
 
-Version: **0.6.0 platform and devices (in progress)**
+Version: **0.8.0 users and login (in progress)**
 Date: 2026-11-21
 Kernel: Aster 0.5.0 (higher half, x86_64)
 ABI: Aster ABI 1 (syscalls 1-46 unchanged)
@@ -92,7 +92,8 @@ Desktop: Aster Desktop (ring 3, software compositor, dirty-region renderer)
 | N2 | Inbound TCP + persistent network config | NOT STARTED |
 | K3 | Move apps out of the desktop process | NOT STARTED |
 | K6 | Per-process quotas and OOM policy | NOT STARTED |
-| A1 | Audio/HDA and device ecosystem (0.6.0) | NEXT MILESTONE |
+| A1 | Audio/HDA and device ecosystem | DEFERRED (0.6.1) |
+| U1 | First-boot wizard, login, lock and per-user homes | IN PROGRESS; account/KDF core only |
 
 ## Metrics snapshot
 

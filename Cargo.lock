@@ -7,6 +7,10 @@ name = "aster-abi"
 version = "0.1.0"
 
 [[package]]
+name = "aster-auth"
+version = "0.8.0"
+
+[[package]]
 name = "aster-motion"
 version = "0.5.0"
 
