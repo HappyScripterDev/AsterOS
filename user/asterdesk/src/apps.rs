@@ -3006,7 +3006,7 @@ impl SettingsApp {
             }
 
             11 => {
-                surface.draw_text(x, cy, "Devices", HEADLINE, palette.text);
+                // The shared Settings header already draws the section name.
                 cy += 34;
                 let mut list = [aster_abi::DeviceInfo::EMPTY; 32];
                 let count = sys::devices(&mut list);
@@ -4372,6 +4372,24 @@ impl MonitorApp {
         }
 
         y += 80;
+
+        let mut devices = [aster_abi::DeviceInfo::EMPTY; 32];
+        let device_count = sys::devices(&mut devices);
+        let driven = devices[..device_count]
+            .iter()
+            .filter(|device| device.flags & 1 != 0)
+            .count();
+        surface.draw_text(
+            x,
+            y,
+            &format!(
+                "PCI: {} function(s), {} with drivers  |  USB xHCI: not implemented",
+                device_count, driven
+            ),
+            CAPTION,
+            palette.secondary,
+        );
+        y += 22;
 
         if let Some(net) = self.net {
             surface.draw_text(
