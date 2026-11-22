@@ -26,26 +26,25 @@ scaling (1.25/1.5/2.0), VirtIO-GPU scanout/present, app-internal damage, resourc
 cache/leak detector and tab drag/tear-out. These move to 0.6.2, not back into
 0.5. See `docs/releases/0.5.0/KNOWN_LIMITATIONS.md`.
 
-### 0.6.0 - Platform & Devices (NEXT)
+### 0.6.0 - Platform & Devices (PARTIAL, UNTAGGED)
 
-Goal: a real platform foundation. ACPI, APIC/IOAPIC, MSI, interrupt-driven
-e1000/AHCI, USB HID, power management and a device manager. This is the
-prerequisite for audio, Bluetooth, SMP and multi-monitor.
+Delivered on `milestone/aster-0.6.0-platform`: ACPI fixed tables and S5/reset,
+`POWER` 47 and `DEVICES` 48, Local APIC, IOAPIC ISA routing, APIC timer, dynamic
+vectors, AHCI MSI, e1000 INTx, PS/2 wheel, Files wheel scrolling, Settings >
+Devices and the real PCI inventory.
 
-- ACPI core: RSDP/XSDT, FADT, MADT, MCFG, HPET; S5 shutdown and reset.
-- APIC/IOAPIC/MSI; dynamic interrupt vectors; e1000 and AHCI interrupt-driven.
+Not release-complete: USB xHCI/HID/hotplug is absent, Monitor has no device
+card, Text/Settings have no wheel handler, MSI-X is missing and the ACPI SCI
+power button is not wired. The `v0.6.0` tag is not set. USB moves to 0.6.1.
+Details: `docs/releases/0.6.0/KNOWN_LIMITATIONS.md`.
+
+### 0.6.1 - USB, Audio, Bluetooth & SMP
+
 - USB xHCI: HID keyboard/mouse, hotplug; mass storage optional.
-- Power menu (shutdown/restart), device manager, hardware inventory.
-- PS/2 mouse wheel and smooth scrolling.
-- No audio, Bluetooth, SMP, HiDPI or VirtIO-GPU in this release.
-
-Detailed plan: `docs/releases/0.6.0/ROADMAP.md`.
-
-### 0.6.1 - Audio, Bluetooth & SMP
-
 - HDA driver, mixer, PCM, system sounds and volume in Control Center.
 - Bluetooth USB HCI, BLE scanning/pairing; audio profiles after HDA is stable.
 - SMP with two vCPUs, per-CPU data, scheduler queues and TLB shootdown.
+- Monitor device card and wheel scrolling in Text/Settings.
 - Thermal and battery readings where ACPI exposes them; no fake hardware.
 
 ### 0.6.2 - Graphics & Shell Completion
@@ -55,19 +54,50 @@ Detailed plan: `docs/releases/0.6.0/ROADMAP.md`.
 - Stage Manager/window groups and tab drag/tear-out.
 - App-internal damage, resource cache/eviction and leak tests.
 
-### 0.7.0 - Storage, Users & Security
+### 0.7.0 - Storage Foundation (AFS v2) (NEXT)
 
-- AFS v2: journal/COW, long names, permissions, snapshots and crash-injection
-  tests; migration from FAT32.
-- Users: accounts, login/lock screen, Argon2id, sessions and fast user switch.
-- Permissions: capabilities, file ACLs, privilege prompts, network caps.
-- Isolation: every app out of process, sandbox profiles, syscall filters and
-  shared-memory surfaces.
-- Hardening: ASLR/KASLR, SMEP/SMAP/UMIP, guard pages, quotas and audit log.
-- Crypto: CSPRNG, TLS 1.3, certificate store, signatures and the loader's
-  secure-boot chain.
-- Firewall and network policy, DNS privacy, updated threat model and external
-  review.
+Goal: replace FAT32 as the persistent home with a real filesystem that supports
+long names, permissions, checksums, journaling and crash recovery. This is the
+prerequisite for users/permissions and the 1.0 crash-consistency gate.
+
+- AFS v2 on-disk format: superblock, inodes, extents, directories, long names,
+  allocation bitmap, CRC32 checksums and a metadata journal.
+- Kernel driver: mount, read/write, create, mkdir, rename, unlink, truncate,
+  fsync, stat, readdir and UID/GID/mode fields.
+- Crash consistency: journal replay, fsck and crash-injection tests.
+- Migration: copy `/home/user` from FAT32 to AFS, verify every file, switch the
+  mount and keep the FAT32 volume as a read-only backup.
+- VFS integration: AFS mount kind, inode tagging, long paths, `fsync`, `stat`
+  fields and cross-directory rename.
+- Tests and release evidence in `docs/releases/0.7.0/`.
+
+No users/login UI in 0.7.0; permissions use the implicit user UID 1000 and root
+0. Accounts and login are 0.7.1.
+
+Detailed plan: `docs/releases/0.7.0/ROADMAP.md`.
+
+### 0.7.1 - Users, Login & Permissions
+
+- Accounts, login/lock screen, password hashing with a reviewed KDF, sessions
+  and logout.
+- User creation/deletion, home directories, Settings > Users and `whoami`/`id`.
+- File permissions and ACLs on AFS, privilege prompts and `chmod`/`chown`.
+- Fast user switching if the session model supports it; otherwise document.
+- No sandboxing, hardening or crypto stack yet.
+
+### 0.7.2 - Isolation & Hardening
+
+- Capabilities, sandbox profiles and syscall filters.
+- Out-of-process app groundwork; full app migration remains 0.8.
+- ASLR/KASLR, SMEP/SMAP/UMIP, guard pages, quotas and audit log.
+- Updated threat model and external review.
+
+### 0.7.3 - Crypto & Trust
+
+- CSPRNG, TLS 1.3, certificate store and signatures.
+- Secure-boot chain for the loader, signed updates and packages.
+- Firewall and network policy, DNS privacy.
+- Security review and signed release artifacts.
 
 ### 0.8.0 - Ecosystem & Developer Platform
 
